@@ -42,23 +42,6 @@ sudo ./scripts/network-security.sh
 ./scripts/health-check.sh
 ```
 
-### Permission Notes
-
-The scripts now handle permission issues gracefully:
-- **Automatic fallback**: If project directories aren't writable, scripts use user home or temp directories for logs
-- **Smart directory creation**: Secrets generation creates required directories automatically
-- **No sudo required**: Most scripts run fine as regular user (except security hardening)
-
-If you encounter permission issues:
-```bash
-# Option 1: Fix project ownership (recommended)
-sudo chown -R $USER:$USER /path/to/project
-
-# Option 2: Run with sudo (fallback)
-sudo ./scripts/generate-secrets.sh
-sudo ./scripts/validate-infrastructure.sh
-```
-
 ## ⚙️ Configuration
 
 ### Environment Setup (.env)
