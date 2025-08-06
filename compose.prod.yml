@@ -1,15 +1,29 @@
 # ==============================================================================
 # PRODUCTION ENVIRONMENT OVERRIDES
 # ==============================================================================
-# This file provides production-specific configurations and monitoring stack
-# Use with: docker-compose -f compose.yml -f compose.prod.yml up -d
+# This file provides production-specific configurations and full observability stack.
+# 
+# USAGE REQUIREMENTS:
+# - This file MUST be used with the base compose.yml file
+# - Command: docker-compose -f compose.yml -f compose.prod.yml up -d
+# - Order matters: base file first, then production overrides
+# 
+# MAINTENANCE NOTES:
+# - Shared anchors (x-hardening, x-logging) must be kept identical to compose.yml
+# - Environment variables use map format to merge with base (not override)
+# - Secrets section is complete and independent of base file
+# - Any changes to shared components must be applied to both files
 
 # ==============================================================================
-# MONITORING STACK YAML ANCHORS
+# PRODUCTION ENVIRONMENT ANCHORS
 # ==============================================================================
+# WARNING: Due to Docker Compose file separation, shared anchors must be duplicated.
+# The following anchors MUST be kept identical to those in compose.yml:
+# - x-hardening, x-logging
+# Any changes to these anchors must be applied to both files simultaneously.
 
-# Security hardening for monitoring services
-x-monitoring-hardening: &monitoring-hardening
+# SHARED ANCHORS (must match compose.yml exactly)
+x-hardening: &hardening
   read_only: true                                    # Immutable root filesystem
   security_opt:
     - no-new-privileges:true                         # Prevent privilege escalation
@@ -17,10 +31,13 @@ x-monitoring-hardening: &monitoring-hardening
   cap_drop:
     - ALL                                           # Drop all Linux capabilities
 
-# Standard tmpfs for monitoring services
-x-monitoring-tmpfs: &monitoring-tmpfs
-  - /tmp:noexec,nosuid,size=100m                    # Memory-backed temporary storage
+x-logging: &logging
+  driver: "json-file"
+  options:
+    max-size: "10m"                                 # Rotate at 10MB
+    max-file: "3"                                   # Keep 3 historical files
 
+# PRODUCTION-SPECIFIC ANCHORS (only used in this file)
 # Resource templates for monitoring services
 x-monitoring-small-resources: &monitoring-small-resources  # Lightweight monitoring tools
   limits:
@@ -38,6 +55,10 @@ x-monitoring-medium-resources: &monitoring-medium-resources # Core monitoring se
     cpus: '0.25'
     memory: 256M
 
+# Extended tmpfs mount for monitoring services
+x-monitoring-tmpfs: &monitoring-tmpfs
+  - /tmp:noexec,nosuid,size=100m
+
 services:
   # ==============================================================================
   # PRODUCTION DATABASE OPTIMIZATIONS
@@ -46,8 +67,9 @@ services:
   # PostgreSQL production tuning and monitoring
   postgres:
     environment:
-      # Enhanced initialization with data integrity checks
-      - POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256 --auth-local=scram-sha-256 --data-checksums
+      # Production-specific environment variables (merged with base)
+      # Base variables preserved: POSTGRES_USER_FILE, POSTGRES_PASSWORD_FILE, POSTGRES_DB
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256 --data-checksums"
     command: >
       postgres
       -c shared_buffers=256MB
@@ -85,22 +107,24 @@ services:
   # N8N production performance and data management
   n8n:
     environment:
-      # Node.js production optimizations
-      - NODE_ENV=production                             # Enable production mode
-      - NODE_OPTIONS=--max-old-space-size=3072          # Increase heap size to 3GB
+      # Production-specific environment variables (merged with base)
+      # Base variables preserved: DB_*, N8N_BASIC_AUTH_*, N8N_HOST, N8N_PORT, etc.
+      # Runtime optimizations
+      NODE_ENV: "production"                             # Enable production mode
+      NODE_OPTIONS: "--max-old-space-size=3072"         # Increase heap size to 3GB
       
       # Data lifecycle management
-      - EXECUTIONS_DATA_PRUNE=true                      # Enable automatic data cleanup
-      - EXECUTIONS_DATA_MAX_AGE=336                     # Keep execution data for 14 days
-      - EXECUTIONS_DATA_PRUNE_TIMEOUT=3600              # Cleanup timeout (1 hour)
+      EXECUTIONS_DATA_PRUNE: "true"                     # Enable automatic data cleanup
+      EXECUTIONS_DATA_MAX_AGE: "336"                    # Keep execution data for 14 days
+      EXECUTIONS_DATA_PRUNE_TIMEOUT: "3600"            # Cleanup timeout (1 hour)
       
       # Production security features
-      - N8N_DISABLE_PRODUCTION_MAIN_PROCESS=false       # Keep main process enabled
-      - N8N_SKIP_WEBHOOK_DEREGISTRATION_SHUTDOWN=false  # Proper webhook cleanup on shutdown
-      - N8N_BLOCK_FILE_ACCESS_TO_N8N_FILES=true         # Block access to internal N8N files
+      N8N_DISABLE_PRODUCTION_MAIN_PROCESS: "false"     # Keep main process enabled
+      N8N_SKIP_WEBHOOK_DEREGISTRATION_SHUTDOWN: "false" # Proper webhook cleanup on shutdown
+      N8N_BLOCK_FILE_ACCESS_TO_N8N_FILES: "true"       # Block access to internal N8N files
       
       # Metrics configuration
-      - N8N_METRICS_PREFIX=n8n_                         # Prometheus metrics prefix
+      N8N_METRICS_PREFIX: "n8n_"                       # Prometheus metrics prefix
     deploy:
       restart_policy:
         condition: any
@@ -140,7 +164,7 @@ services:
   
   # Prometheus - Metrics collection and alerting system
   prometheus:
-    <<: *monitoring-hardening
+    <<: *hardening
     image: prom/prometheus:latest
     container_name: n8n-prometheus
     restart: unless-stopped
@@ -161,11 +185,18 @@ services:
       - n8n-backend                                     # Internal monitoring network
     ports:
       - "127.0.0.1:9090:9090"                           # Local access only (security)
+    healthcheck:                                        # Monitor Prometheus availability
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:9090/-/ready || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging: *logging
     deploy:
       resources: *monitoring-medium-resources
 
   grafana:
-    <<: *monitoring-hardening
+    <<: *hardening
     image: grafana/grafana:latest
     container_name: n8n-grafana
     restart: unless-stopped
@@ -191,52 +222,48 @@ services:
       - n8n-frontend
     depends_on:
       - prometheus
+    healthcheck:                                        # Monitor Grafana availability
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging: *logging
     deploy:
       resources: *monitoring-small-resources
 
   # Log aggregation
   loki:
+    <<: *hardening
     image: grafana/loki:latest
     container_name: n8n-loki
     restart: unless-stopped
     user: "10001:10001"  # loki user
-    read_only: true
-    security_opt:
-      - no-new-privileges:true
-      - seccomp:./security/seccomp-profile.json
-    cap_drop:
-      - ALL
-    tmpfs:
-      - /tmp:noexec,nosuid,size=100m
+    tmpfs: *monitoring-tmpfs
     command: -config.file=/etc/loki/local-config.yaml
     volumes:
       - ./monitoring/loki/loki-config.yaml:/etc/loki/local-config.yaml:ro
       - loki_data:/loki
     networks:
       - n8n-backend
+    healthcheck:                                        # Monitor Loki availability
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3100/ready || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging: *logging
     deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 512M
-        reservations:
-          cpus: '0.1'
-          memory: 128M
+      resources: *monitoring-small-resources
 
   # Docker logging driver
   promtail:
+    <<: *hardening
     image: grafana/promtail:latest
     container_name: n8n-promtail
     restart: unless-stopped
     user: "10001:10001"  # promtail user
-    read_only: true
-    security_opt:
-      - no-new-privileges:true
-      - seccomp:./security/seccomp-profile.json
-    cap_drop:
-      - ALL
-    tmpfs:
-      - /tmp:noexec,nosuid,size=100m
+    tmpfs: *monitoring-tmpfs
     volumes:
       - /var/log:/var/log:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -244,29 +271,24 @@ services:
     networks:
       - n8n-backend
     command: -config.file=/etc/promtail/config.yml
+    healthcheck:                                        # Monitor Promtail functionality
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:9080/ready || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging: *logging
     deploy:
-      resources:
-        limits:
-          cpus: '0.25'
-          memory: 256M
-        reservations:
-          cpus: '0.1'
-          memory: 128M
+      resources: *monitoring-small-resources
 
   # Alerting
   alertmanager:
+    <<: *hardening
     image: prom/alertmanager:latest
     container_name: n8n-alertmanager
     restart: unless-stopped
     user: "65534:65534"  # nobody user
-    read_only: true
-    security_opt:
-      - no-new-privileges:true
-      - seccomp:./security/seccomp-profile.json
-    cap_drop:
-      - ALL
-    tmpfs:
-      - /tmp:noexec,nosuid,size=100m
+    tmpfs: *monitoring-tmpfs
     environment:
       - SMTP_HOST=${SMTP_HOST:-localhost}
       - SMTP_PORT=${SMTP_PORT:-587}
@@ -288,29 +310,24 @@ services:
       - n8n-backend
     ports:
       - "127.0.0.1:9093:9093"
+    healthcheck:                                        # Monitor Alertmanager availability
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:9093/-/ready || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging: *logging
     deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 256M
-        reservations:
-          cpus: '0.1'
-          memory: 64M
+      resources: *monitoring-small-resources
 
   # PostgreSQL Exporter
   postgres-exporter:
+    <<: *hardening
     image: prometheuscommunity/postgres-exporter:latest
     container_name: n8n-postgres-exporter
     restart: unless-stopped
     user: "65534:65534"  # nobody user
-    read_only: true
-    security_opt:
-      - no-new-privileges:true
-      - seccomp:./security/seccomp-profile.json
-    cap_drop:
-      - ALL
-    tmpfs:
-      - /tmp:noexec,nosuid,size=100m
+    tmpfs: *monitoring-tmpfs
     environment:
       - DATA_SOURCE_URI=postgres:5432/n8n?sslmode=disable
       - DATA_SOURCE_USER_FILE=/run/secrets/postgres_user
@@ -323,29 +340,24 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:                                        # Monitor postgres exporter availability
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:9187/metrics || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging: *logging
     deploy:
-      resources:
-        limits:
-          cpus: '0.25'
-          memory: 128M
-        reservations:
-          cpus: '0.1'
-          memory: 64M
+      resources: *monitoring-small-resources
 
   # Redis Exporter
   redis-exporter:
+    <<: *hardening
     image: oliver006/redis_exporter:latest
     container_name: n8n-redis-exporter
     restart: unless-stopped
     user: "59000:59000"  # redis_exporter user
-    read_only: true
-    security_opt:
-      - no-new-privileges:true
-      - seccomp:./security/seccomp-profile.json
-    cap_drop:
-      - ALL
-    tmpfs:
-      - /tmp:noexec,nosuid,size=100m
+    tmpfs: *monitoring-tmpfs
     environment:
       - REDIS_ADDR=redis://redis:6379
       - REDIS_PASSWORD_FILE=/run/secrets/redis_password
@@ -355,29 +367,24 @@ services:
       - n8n-backend
     depends_on:
       - redis
+    healthcheck:                                        # Monitor redis exporter availability
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:9121/metrics || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging: *logging
     deploy:
-      resources:
-        limits:
-          cpus: '0.25'
-          memory: 128M
-        reservations:
-          cpus: '0.1'
-          memory: 64M
+      resources: *monitoring-small-resources
 
   # Node Exporter for system metrics
   node-exporter:
+    <<: *hardening
     image: prom/node-exporter:latest
     container_name: n8n-node-exporter
     restart: unless-stopped
     user: "65534:65534"  # nobody user
-    read_only: true
-    security_opt:
-      - no-new-privileges:true
-      - seccomp:./security/seccomp-profile.json
-    cap_drop:
-      - ALL
-    tmpfs:
-      - /tmp:noexec,nosuid,size=100m
+    tmpfs: *monitoring-tmpfs
     command:
       - '--path.procfs=/host/proc'
       - '--path.rootfs=/rootfs'
@@ -389,28 +396,23 @@ services:
       - /:/rootfs:ro
     networks:
       - n8n-backend
+    healthcheck:                                        # Monitor node exporter availability
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:9100/metrics || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging: *logging
     deploy:
-      resources:
-        limits:
-          cpus: '0.25'
-          memory: 128M
-        reservations:
-          cpus: '0.1'
-          memory: 64M
+      resources: *monitoring-small-resources
 
   # cAdvisor for container metrics
   cadvisor:
+    <<: *hardening
     image: gcr.io/cadvisor/cadvisor:latest
     container_name: n8n-cadvisor
     restart: unless-stopped
-    read_only: true
-    security_opt:
-      - no-new-privileges:true
-      - seccomp:./security/seccomp-profile.json
-    cap_drop:
-      - ALL
-    tmpfs:
-      - /tmp:noexec,nosuid,size=100m
+    tmpfs: *monitoring-tmpfs
     volumes:
       - /:/rootfs:ro
       - /var/run:/var/run:ro
@@ -422,14 +424,15 @@ services:
     privileged: false
     devices:
       - /dev/kmsg
+    healthcheck:                                        # Monitor cAdvisor availability
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8080/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging: *logging
     deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 256M
-        reservations:
-          cpus: '0.1'
-          memory: 128M
+      resources: *monitoring-small-resources
 
 volumes:
   prometheus_data:
@@ -442,9 +445,37 @@ volumes:
     driver: local
 
 secrets:
+  # ==============================================================================
+  # SECRETS CONFIGURATION
+  # ==============================================================================
+  # IMPORTANT: This production file provides a complete secrets definition
+  # and does NOT require the base compose.yml to be present for secrets.
+  # However, both files must use identical secret definitions to ensure consistency.
+  
+  # PostgreSQL authentication
+  postgres_user:
+    file: ./secrets/postgres_user.txt
+  postgres_password:
+    file: ./secrets/postgres_password.txt
+  
+  # N8N authentication and encryption  
+  n8n_user:
+    file: ./secrets/n8n_user.txt
+  n8n_password:
+    file: ./secrets/n8n_password.txt
+  n8n_encryption_key:
+    file: ./secrets/n8n_encryption_key.txt
+  
+  # Redis authentication
+  redis_password:
+    file: ./secrets/redis_password.txt
+  
+  # SMTP configuration
+  smtp_password:
+    file: ./secrets/smtp_password.txt
+  
+  # Monitoring stack secrets (production-only)
   grafana_user:
     file: ./secrets/grafana_user.txt
   grafana_password:
     file: ./secrets/grafana_password.txt
-  smtp_password:
-    file: ./secrets/smtp_password.txt

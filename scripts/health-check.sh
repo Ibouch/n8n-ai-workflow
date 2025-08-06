@@ -4,9 +4,10 @@
 
 set -euo pipefail
 
-# Load common utilities
+# Load common utilities and health check functions
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh"
+source "${SCRIPT_DIR}/lib/health-checks.sh"
 
 # Configuration
 LOG_FILE="${PROJECT_ROOT}/volumes/logs/health-check.log"
@@ -25,32 +26,8 @@ fi
 init_common
 change_to_project_root
 
-# Enhanced check function with better error handling
-check() {
-    local name="$1"
-    local command="$2"
-    local critical="${3:-true}"
-    
-    echo -n "Checking ${name}... "
-    
-    if eval "${command}" >/dev/null 2>&1; then
-        echo -e "${GREEN}${CHECKMARK} OK${NC}"
-        log_info "${name}: OK"
-        CHECKS_PASSED=$((CHECKS_PASSED + 1))
-        return 0
-    else
-        if [ "${critical}" = "true" ]; then
-            echo -e "${RED}${CROSS} FAILED${NC}"
-            log_error "${name}: FAILED"
-            CHECKS_FAILED=$((CHECKS_FAILED + 1))
-        else
-            echo -e "${YELLOW}${WARNING} WARNING${NC}"
-            log_warn "${name}: WARNING"
-            WARNINGS=$((WARNINGS + 1))
-        fi
-        return 1
-    fi
-}
+# Use standardized health check function from lib/health-checks.sh
+# The perform_health_check function provides consistent interface and error handling
 
 # Header with improved styling
 print_script_header "N8N Production Health Check" "Comprehensive system health verification"
@@ -60,31 +37,44 @@ echo -e "\n${BLUE}1. Docker Services${NC}"
 echo "-------------------"
 
 # Check if Docker is running
-check "Docker daemon" "docker info"
+if perform_health_check "Docker daemon" "check_docker_daemon"; then
+    CHECKS_PASSED=$((CHECKS_PASSED + 1))
+else
+    CHECKS_FAILED=$((CHECKS_FAILED + 1))
+fi
 
 # Check if docker-compose is available  
-check "Docker Compose" "docker-compose version"
+if perform_health_check "Docker Compose" "check_docker_compose"; then
+    CHECKS_PASSED=$((CHECKS_PASSED + 1))
+else
+    CHECKS_FAILED=$((CHECKS_FAILED + 1))
+fi
 
 # Check each service using improved service detection
 for service in postgres n8n nginx redis; do
-    check "${service} container" "is_service_running ${service}"
+    if perform_health_check "${service} container" "check_service_running $service"; then
+        CHECKS_PASSED=$((CHECKS_PASSED + 1))
+    else
+        CHECKS_FAILED=$((CHECKS_FAILED + 1))
+    fi
 done
 
 # 2. Application Health
 echo -e "\n${BLUE}2. Application Health${NC}"
 echo "---------------------"
 
-# N8N health endpoint
-check_n8n_health() {
-    is_service_running "n8n" && docker_exec_safe n8n wget --no-verbose --tries=1 --spider http://localhost:5678/healthz
-}
+# Use standardized health check functions from library
+if perform_health_check "N8N health endpoint" "check_n8n_health_endpoint"; then
+    CHECKS_PASSED=$((CHECKS_PASSED + 1))
+else
+    CHECKS_FAILED=$((CHECKS_FAILED + 1))
+fi
 
-check_n8n_metrics() {
-    is_service_running "n8n" && docker_exec_safe n8n wget --no-verbose --tries=1 --spider http://localhost:5678/metrics
-}
-
-check "N8N health endpoint" "check_n8n_health"
-check "N8N metrics endpoint" "check_n8n_metrics" false
+result=$(perform_health_check "N8N metrics endpoint" "check_n8n_metrics_endpoint" false)
+case $? in
+    0) CHECKS_PASSED=$((CHECKS_PASSED + 1)) ;;
+    2) WARNINGS=$((WARNINGS + 1)) ;;
+esac
 
 # Check N8N version safely
 if is_service_running "n8n"; then
@@ -98,18 +88,12 @@ echo "N8N Version: ${N8N_VERSION}"
 echo -e "\n${BLUE}3. Database Health${NC}"
 echo "------------------"
 
-# PostgreSQL connectivity - Fixed shell escaping issue
-check_postgres_connection() {
-    if is_service_running "postgres"; then
-        local postgres_user
-        postgres_user=$(read_secret "postgres_user")
-        docker_exec_safe postgres pg_isready -U "$postgres_user" -d "${POSTGRES_DB:-n8n}"
-    else
-        return 1
-    fi
-}
-
-check "PostgreSQL connection" "check_postgres_connection"
+# Use standardized database health check
+if perform_health_check "PostgreSQL connection" "check_postgresql_connection"; then
+    CHECKS_PASSED=$((CHECKS_PASSED + 1))
+else
+    CHECKS_FAILED=$((CHECKS_FAILED + 1))
+fi
 
 # Database size check
 if is_service_running "postgres"; then
@@ -137,17 +121,12 @@ if [ "${ENABLE_REDIS_CACHE:-true}" = "true" ]; then
     echo -e "\n${BLUE}4. Redis Health${NC}"
     echo "---------------"
     
-    check_redis_connection() {
-        if is_service_running "redis"; then
-            local redis_password
-            redis_password=$(read_secret "redis_password")
-            docker_exec_safe redis redis-cli --pass "$redis_password" ping | grep -q PONG
-        else
-            return 1
-        fi
-    }
-    
-    check "Redis connection" "check_redis_connection"
+    # Use standardized Redis health check
+    if perform_health_check "Redis connection" "check_redis_connection"; then
+        CHECKS_PASSED=$((CHECKS_PASSED + 1))
+    else
+        CHECKS_FAILED=$((CHECKS_FAILED + 1))
+    fi
     
     # Get Redis memory usage
     if is_service_running "redis"; then
@@ -163,16 +142,20 @@ fi
 echo -e "\n${BLUE}5. Web Server Health${NC}"
 echo "--------------------"
 
-# Nginx configuration test
-check_nginx_config() {
-    is_service_running "nginx" && docker_exec_safe nginx nginx -t
-}
-
-check "Nginx configuration" "check_nginx_config"
+# Use standardized Nginx health check
+if perform_health_check "Nginx configuration" "check_nginx_configuration"; then
+    CHECKS_PASSED=$((CHECKS_PASSED + 1))
+else
+    CHECKS_FAILED=$((CHECKS_FAILED + 1))
+fi
 
 # Check HTTPS endpoint (if accessible)
 if [ -n "${N8N_HOST:-}" ]; then
-    check "HTTPS endpoint" "curl -sSf -k https://${N8N_HOST} -o /dev/null -w '%{http_code}' | grep -E '200|301|302|401'" false
+    result=$(perform_health_check "HTTPS endpoint" "check_https_endpoint" false)
+    case $? in
+        0) CHECKS_PASSED=$((CHECKS_PASSED + 1)) ;;
+        2) WARNINGS=$((WARNINGS + 1)) ;;
+    esac
 fi
 
 # 6. System Resources
@@ -263,21 +246,24 @@ if [ "${ENABLE_MONITORING:-true}" = "true" ]; then
     echo -e "\n${BLUE}9. Monitoring Stack${NC}"
     echo "-------------------"
     
-    check_prometheus() {
-        is_service_running "prometheus" && docker_exec_safe prometheus wget --no-verbose --tries=1 --spider http://localhost:9090/-/healthy
-    }
+    # Use standardized monitoring health checks
+    result=$(perform_health_check "Prometheus" "check_prometheus_health" false)
+    case $? in
+        0) CHECKS_PASSED=$((CHECKS_PASSED + 1)) ;;
+        2) WARNINGS=$((WARNINGS + 1)) ;;
+    esac
     
-    check_grafana() {
-        is_service_running "grafana" && docker_exec_safe grafana wget --no-verbose --tries=1 --spider http://localhost:3000/api/health
-    }
+    result=$(perform_health_check "Grafana" "check_grafana_health" false)
+    case $? in
+        0) CHECKS_PASSED=$((CHECKS_PASSED + 1)) ;;
+        2) WARNINGS=$((WARNINGS + 1)) ;;
+    esac
     
-    check_loki() {
-        is_service_running "loki" && docker_exec_safe loki wget --no-verbose --tries=1 --spider http://localhost:3100/ready
-    }
-    
-    check "Prometheus" "check_prometheus" false
-    check "Grafana" "check_grafana" false
-    check "Loki" "check_loki" false
+    result=$(perform_health_check "Loki" "check_loki_health" false)
+    case $? in
+        0) CHECKS_PASSED=$((CHECKS_PASSED + 1)) ;;
+        2) WARNINGS=$((WARNINGS + 1)) ;;
+    esac
 fi
 
 # Summary

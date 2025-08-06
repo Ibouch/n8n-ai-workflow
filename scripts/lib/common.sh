@@ -547,6 +547,93 @@ print_version() {
 # Export functions for use in other scripts
 export -f log log_info log_success log_warn log_error log_debug
 export -f warn error_exit info
+# ==============================================================================
+# ENVIRONMENT VALIDATION FUNCTIONS
+# ==============================================================================
+
+# Assert environment variable is set and non-empty
+assert_env() {
+    local var_name="$1"
+    local description="${2:-$var_name}"
+    local default_value="${3:-}"
+    
+    if [ -z "${!var_name:-}" ]; then
+        if [ -n "$default_value" ]; then
+            export "$var_name"="$default_value"
+            log_warn "$description not set, using default: $default_value"
+        else
+            error_exit "$description is required but not set (environment variable: $var_name)"
+        fi
+    fi
+}
+
+# Validate multiple environment variables at once
+validate_required_env() {
+    local vars=("$@")
+    local missing_vars=()
+    
+    for var in "${vars[@]}"; do
+        if [ -z "${!var:-}" ]; then
+            missing_vars+=("$var")
+        fi
+    done
+    
+    if [ ${#missing_vars[@]} -gt 0 ]; then
+        error_exit "Required environment variables not set: ${missing_vars[*]}"
+    fi
+}
+
+# Validate common N8N environment variables
+validate_n8n_env() {
+    log_info "Validating N8N environment configuration..."
+    
+    # Required variables
+    assert_env "POSTGRES_DB" "PostgreSQL database name" "n8n"
+    assert_env "GENERIC_TIMEZONE" "System timezone" "UTC"
+    
+    # Optional but recommended
+    if [ -z "${N8N_HOST:-}" ]; then
+        log_warn "N8N_HOST not set - using localhost (not suitable for production)"
+    fi
+    
+    if [ -z "${N8N_PROTOCOL:-}" ]; then
+        log_warn "N8N_PROTOCOL not set - using https (recommended)"
+        export N8N_PROTOCOL="https"
+    fi
+    
+    # Security validation
+    if [ "${N8N_BASIC_AUTH_ACTIVE:-true}" != "true" ]; then
+        warn "Basic authentication is disabled - consider enabling for security"
+    fi
+    
+    if [ "${N8N_SECURE_COOKIE:-true}" != "true" ]; then
+        warn "Secure cookies are disabled - consider enabling for HTTPS"
+    fi
+}
+
+# Standardized HTTP health check using wget (consistent across all scripts)
+http_health_check() {
+    local url="$1"
+    local timeout="${2:-10}"
+    local retries="${3:-3}"
+    
+    for ((i=1; i<=retries; i++)); do
+        if wget --no-verbose --tries=1 --timeout="$timeout" --spider "$url" >/dev/null 2>&1; then
+            return 0
+        fi
+        
+        if [ $i -lt $retries ]; then
+            sleep 1
+        fi
+    done
+    
+    return 1
+}
+
+# ==============================================================================
+# EXPORT ALL FUNCTIONS
+# ==============================================================================
+
 export -f check_root check_not_root require_commands validate_project_structure
 export -f change_to_project_root get_container_id get_container_id_safe get_container_name
 export -f is_service_running wait_for_service_healthy is_service_healthy docker_exec_safe
@@ -556,6 +643,7 @@ export -f create_dir_safe backup_file cleanup_old_files
 export -f is_age_available get_age_recipients_file encrypt_or_compress
 export -f test_connectivity is_port_available
 export -f init_common cleanup_common print_script_header print_script_footer confirm_action
+export -f assert_env validate_required_env validate_n8n_env http_health_check
 
 # Export constants
 export RED GREEN YELLOW BLUE PURPLE CYAN WHITE NC

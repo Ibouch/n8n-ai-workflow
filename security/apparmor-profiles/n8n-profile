@@ -1,6 +1,6 @@
 #include <tunables/global>
 
-profile n8n-profile flags=(attach_disconnected,mediate_deleted) {
+profile n8n_app_profile flags=(attach_disconnected,mediate_deleted) {
   #include <abstractions/base>
   #include <abstractions/bash>
   #include <abstractions/consoles>

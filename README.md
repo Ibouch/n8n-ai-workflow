@@ -35,25 +35,12 @@ docker-compose -f compose.yml -f compose.prod.yml up -d
 
 # 6. Setup security hardening (run as root)
 sudo ./scripts/setup-security.sh
+sudo ./scripts/load-apparmor-profiles.sh
 sudo ./scripts/network-security.sh
 
 # 7. Verify deployment health
 ./scripts/health-check.sh
 ```
-
-**🎯 Access**: https://localhost (credentials in `secrets/n8n_*`)
-
-## 🔒 Security Features
-
-**Defense-in-depth architecture** with comprehensive threat mitigation:
-
-| **Security Layer** | **Implementation** |
-|-------------------|-------------------|
-| **Container Hardening** | Non-root execution, read-only filesystems, seccomp profiles |
-| **Network Segmentation** | DMZ (172.20.0.0/24) ↔ Internal (172.21.0.0/24) isolation |
-| **Secrets Management** | Docker secrets, age encryption, secure generation |
-| **Access Control** | Zero external backend access, minimal capabilities |
-| **Monitoring** | Security events, audit logs, comprehensive health checks |
 
 ## ⚙️ Configuration
 
@@ -79,6 +66,48 @@ nginx/ssl/
 ├── key.pem           # Private key
 └── dhparam.pem       # DH parameters
 ```
+
+**🎯 Access**: https://localhost (credentials in `secrets/n8n_*`)
+
+## 🔒 Security Features
+
+**Defense-in-depth architecture** with comprehensive threat mitigation:
+
+| **Security Layer** | **Implementation** |
+|-------------------|-------------------|
+| **Container Hardening** | Non-root execution, read-only filesystems, seccomp profiles |
+| **AppArmor Profiles** | Custom mandatory access control for all services |
+| **Network Segmentation** | DMZ (172.20.0.0/24) ↔ Internal (172.21.0.0/24) isolation |
+| **Secrets Management** | Docker secrets, age encryption, secure generation |
+| **Access Control** | Zero external backend access, minimal capabilities |
+| **Monitoring** | Security events, audit logs, comprehensive health checks |
+
+### AppArmor Security Profiles
+
+**Mandatory Access Control (MAC)** enforcement with custom AppArmor profiles:
+
+```bash
+# Load AppArmor profiles (requires root access)
+sudo ./scripts/load-apparmor-profiles.sh
+
+# Verify profiles are loaded and active
+sudo aa-status | grep n8n
+
+# Monitor AppArmor denials (security violations)
+journalctl -f | grep apparmor
+```
+
+**Profile Coverage**:
+- **n8n_postgres_profile**: Database security constraints
+- **n8n_app_profile**: N8N application restrictions  
+- **n8n_nginx_profile**: Web server access controls
+- **n8n_redis_profile**: Cache service limitations
+
+**Features**:
+- Automatic profile loading at system boot (systemd integration)
+- Syntax validation before kernel loading
+- Comprehensive file system and capability restrictions
+- Network access controls aligned with service requirements
 
 ## 📊 Monitoring & Observability
 
@@ -147,6 +176,7 @@ docker-compose exec alertmanager kill -HUP 1
 | **Update** | `./scripts/update.sh` | Safe updates with rollback |
 | **Validate** | `./scripts/validate-infrastructure.sh` | System validation |
 | **Security** | `sudo ./scripts/setup-security.sh` | AppArmor profiles & audit rules |
+| **AppArmor** | `sudo ./scripts/load-apparmor-profiles.sh` | Load security profiles into kernel |
 
 ## 🔐 Secrets Management
 

@@ -55,6 +55,10 @@ info "Project Structure:"
 validate_check "Project structure" "validate_project_structure"
 validate_check "Secrets configuration" "validate_secrets"
 
+# 3. Environment Validation
+info "Environment Variables:"
+validate_check "N8N environment" "validate_n8n_env" false
+
 # Additional secret validation
 secret_count=$(find "${SECRETS_DIR}" -name "*.txt" 2>/dev/null | wc -l)
 if [ "$secret_count" -ge 9 ]; then
@@ -64,13 +68,13 @@ else
     VALIDATION_WARNINGS=$((VALIDATION_WARNINGS + 1))
 fi
 
-# 3. Service Status Validation
+# 4. Service Status Validation
 info "Service Status:"
 for service in postgres n8n nginx redis; do
     validate_check "$service service" "check_service_running $service" false
 done
 
-# 4. Health Check Validation
+# 5. Health Check Validation
 info "Application Health:"
 validate_check "N8N health endpoint" "check_n8n_health_endpoint" false
 validate_check "PostgreSQL connection" "check_postgresql_connection" false

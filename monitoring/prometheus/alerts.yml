@@ -133,6 +133,7 @@ groups:
       summary: "High request rate detected"
       description: "Request rate is {{ $value }} req/s."
 
+
 - name: security-monitoring
   rules:
   # Container Security Alerts
@@ -163,3 +164,155 @@ groups:
     annotations:
       summary: "Multiple failed login attempts"
       description: "{{ $value }} failed login attempts in the last 5 minutes."
+
+- name: monitoring-infrastructure
+  rules:
+  # Prometheus Self-Monitoring
+  - alert: PrometheusConfigurationReload
+    expr: prometheus_config_last_reload_successful != 1
+    for: 5m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Prometheus configuration reload failed"
+      description: "Prometheus configuration reload has failed."
+
+  - alert: PrometheusTargetDown
+    expr: up == 0
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Prometheus target down"
+      description: "{{ $labels.instance }} target is down."
+
+  - alert: PrometheusTSDBCompactionsFailing
+    expr: increase(prometheus_tsdb_compactions_failed_total[1h]) > 0
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Prometheus TSDB compactions failing"
+      description: "Prometheus has detected {{ $value }} compaction failures in the last hour."
+
+  # Loki Alerts
+  - alert: LokiDown
+    expr: up{job="loki"} == 0
+    for: 5m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Loki is down"
+      description: "Loki log aggregation service is not responding."
+
+  - alert: LokiHighIngestionRate
+    expr: rate(loki_distributor_ingester_appends_total[5m]) > 1000
+    for: 10m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Loki high ingestion rate"
+      description: "Loki is ingesting logs at {{ $value }} entries/sec, which is higher than normal."
+
+  - alert: LokiIngesterErrors
+    expr: increase(loki_ingester_failed_chunks_total[5m]) > 0
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Loki ingester errors detected"
+      description: "Loki ingester has {{ $value }} failed chunks in the last 5 minutes."
+
+  # Promtail Alerts
+  - alert: PromtailDown
+    expr: up{job="promtail"} == 0
+    for: 5m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Promtail is down"
+      description: "Promtail log shipper is not responding."
+
+  - alert: PromtailFileLagging
+    expr: (time() - promtail_file_bytes_total) > 300
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Promtail file lagging"
+      description: "Promtail is lagging behind log file updates by more than 5 minutes."
+
+  # Grafana Alerts
+  - alert: GrafanaDown
+    expr: up{job="grafana"} == 0
+    for: 5m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Grafana is down"
+      description: "Grafana dashboard service is not responding."
+
+  # Node Exporter Alerts
+  - alert: NodeExporterDown
+    expr: up{job="node-exporter"} == 0
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Node Exporter is down"
+      description: "Node Exporter system metrics collector is not responding."
+
+  - alert: DiskSpaceLow
+    expr: (node_filesystem_avail_bytes / node_filesystem_size_bytes) * 100 < 10
+    for: 5m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Disk space critically low"
+      description: "Disk space on {{ $labels.device }} is below 10% ({{ $value }}% available)."
+
+  - alert: HighMemoryUsage
+    expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High memory usage"
+      description: "Memory usage is above 85% ({{ $value }}% used)."
+
+  - alert: HighCPUUsage
+    expr: 100 - (avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+    for: 10m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High CPU usage"
+      description: "CPU usage is above 80% ({{ $value }}% used)."
+
+  - alert: SystemLoadHigh
+    expr: node_load15 > (count(count(node_cpu_seconds_total) by (cpu)) * 1.5)
+    for: 10m
+    labels:
+      severity: warning
+    annotations:
+      summary: "System load is high"
+      description: "15-minute load average is {{ $value }}, which is high for this system."
+
+  # Alertmanager Self-Monitoring
+  - alert: AlertmanagerDown
+    expr: up{job="alertmanager"} == 0
+    for: 5m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Alertmanager is down"
+      description: "Alertmanager notification service is not responding."
+
+  - alert: AlertmanagerConfigurationReload
+    expr: alertmanager_config_last_reload_successful != 1
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Alertmanager configuration reload failed"
+      description: "Alertmanager configuration reload has failed."
