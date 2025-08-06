@@ -19,8 +19,18 @@ SECRETS_DIR="${PROJECT_ROOT}/secrets"
 # Default log file (can be overridden by calling scripts)
 LOG_FILE="${LOG_FILE:-${PROJECT_ROOT}/logs/scripts.log}"
 
-# Ensure logs directory exists
-mkdir -p "$(dirname "$LOG_FILE")"
+# Ensure logs directory exists and is writable
+if ! mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null; then
+    # Fallback to user's home directory if project logs aren't writable
+    LOG_FILE="${HOME}/.n8n-scripts.log"
+    mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || true
+fi
+
+# Test if log file is writable
+if ! touch "$LOG_FILE" 2>/dev/null; then
+    # Final fallback to /tmp
+    LOG_FILE="/tmp/n8n-scripts-$(id -u).log"
+fi
 
 # ==============================================================================
 # COLOR CONSTANTS AND FORMATTING
@@ -69,8 +79,8 @@ log() {
     # Output to console with color
     echo -e "${color}${CHECKMARK} ${message}${NC}"
     
-    # Output to log file without color
-    echo "$log_entry" >> "$LOG_FILE"
+    # Output to log file without color (silently ignore if can't write)
+    echo "$log_entry" >> "$LOG_FILE" 2>/dev/null || true
 }
 
 # Convenience logging functions
@@ -82,7 +92,7 @@ log_debug() { log "DEBUG" "$1"; }
 
 # Warning function that doesn't exit
 warn() {
-    echo -e "${YELLOW}${WARNING} [WARNING]${NC} $1" | tee -a "$LOG_FILE"
+    echo -e "${YELLOW}${WARNING} [WARNING]${NC} $1" | tee -a "$LOG_FILE" 2>/dev/null || echo -e "${YELLOW}${WARNING} [WARNING]${NC} $1"
 }
 
 # Error function that exits with code
@@ -90,13 +100,14 @@ error_exit() {
     local message="$1"
     local exit_code="${2:-1}"
     echo -e "${RED}${CROSS} [ERROR]${NC} $message" >&2
-    echo "[$(date +'%Y-%m-%d %H:%M:%S')] [ERROR] $message" >> "$LOG_FILE"
+    # Try to log to file, but don't fail if we can't
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] [ERROR] $message" >> "$LOG_FILE" 2>/dev/null || true
     exit "$exit_code"
 }
 
 # Info function for general information
 info() {
-    echo -e "${BLUE}${INFO} [INFO]${NC} $1" | tee -a "$LOG_FILE"
+    echo -e "${BLUE}${INFO} [INFO]${NC} $1" | tee -a "$LOG_FILE" 2>/dev/null || echo -e "${BLUE}${INFO} [INFO]${NC} $1"
 }
 
 # ==============================================================================
@@ -135,11 +146,17 @@ require_commands() {
 
 # Check if project is properly initialized
 validate_project_structure() {
+    local skip_secrets_check="${1:-false}"
+    
     local required_paths=(
         "$PROJECT_ROOT/compose.yml"
-        "$PROJECT_ROOT/secrets"
         "$PROJECT_ROOT/scripts"
     )
+    
+    # Only check secrets directory if not generating secrets
+    if [ "$skip_secrets_check" != "true" ]; then
+        required_paths+=("$PROJECT_ROOT/secrets")
+    fi
     
     for path in "${required_paths[@]}"; do
         if [ ! -e "$path" ]; then
@@ -473,9 +490,11 @@ is_port_available() {
 
 # Initialize common environment
 init_common() {
+    local skip_secrets_validation="${1:-false}"
+    
     # Validate basic requirements
     require_commands "docker" "docker-compose"
-    validate_project_structure
+    validate_project_structure "$skip_secrets_validation"
     
     # Set up signal handlers for cleanup
     trap cleanup_common EXIT

@@ -33,13 +33,30 @@ cp env.example .env
 # 5. Deploy with production monitoring
 docker-compose -f compose.yml -f compose.prod.yml up -d
 
-# 6. Setup security hardening (run as root)
+# 6. Setup security hardening (requires root access)
 sudo ./scripts/setup-security.sh
 sudo ./scripts/load-apparmor-profiles.sh
 sudo ./scripts/network-security.sh
 
 # 7. Verify deployment health
 ./scripts/health-check.sh
+```
+
+### Permission Notes
+
+The scripts now handle permission issues gracefully:
+- **Automatic fallback**: If project directories aren't writable, scripts use user home or temp directories for logs
+- **Smart directory creation**: Secrets generation creates required directories automatically
+- **No sudo required**: Most scripts run fine as regular user (except security hardening)
+
+If you encounter permission issues:
+```bash
+# Option 1: Fix project ownership (recommended)
+sudo chown -R $USER:$USER /path/to/project
+
+# Option 2: Run with sudo (fallback)
+sudo ./scripts/generate-secrets.sh
+sudo ./scripts/validate-infrastructure.sh
 ```
 
 ## ⚙️ Configuration
@@ -193,6 +210,8 @@ docker-compose exec alertmanager kill -HUP 1
 ./scripts/validate-infrastructure.sh secrets
 ```
 
+**🔧 Permission Handling**: Scripts automatically handle permission issues by creating fallback directories when project paths aren't writable. No sudo required for secret generation.
+
 ### Required Secrets Structure
 
 ```
@@ -328,9 +347,16 @@ docker-compose logs servicename        # View specific logs
 
 **Permission issues:**
 ```bash
+# Fix project ownership (recommended approach)
+sudo chown -R $USER:$USER /path/to/project
+
+# Or fix specific Docker volumes
 sudo chown -R 70:70 volumes/postgres    # PostgreSQL
 sudo chown -R 1000:1000 volumes/n8n     # N8N
 chmod 600 secrets/*.txt                 # Secrets
+
+# Scripts auto-fallback to writable locations when needed
+# Check logs in: ~/.n8n-scripts.log or /tmp/n8n-scripts-*.log
 ```
 
 **Network connectivity:**

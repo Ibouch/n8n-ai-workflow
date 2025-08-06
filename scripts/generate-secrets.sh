@@ -8,8 +8,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh"
 
-# Initialize common environment
-init_common
+# Initialize common environment (skip secrets directory validation)
+init_common true
 
 # Function to generate secure random string
 generate_secure_string() {
