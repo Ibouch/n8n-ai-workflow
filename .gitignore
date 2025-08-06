@@ -1,0 +1,58 @@
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Secrets - NEVER commit these!
+secrets/
+!secrets/.gitkeep
+!secrets/README.md
+*.key
+*.pem
+*.crt
+*.p12
+*.pfx
+dhparam.pem
+
+# Volume data
+volumes/
+!volumes/.gitkeep
+
+# Backup files
+backups/
+*.backup
+*.dump
+*.tar.gz
+*.sql
+
+# SSL certificates
+nginx/ssl/
+!nginx/ssl/.gitkeep
+!nginx/ssl/README.md
+
+# Logs
+*.log
+logs/
+nginx/logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Docker override files for local development
+docker-compose.override.yml
+
+# Temporary files
+*.tmp
+*.temp
+*.cache
+tmp/
+temp/
+
+# Monitoring data
+prometheus_data/
+grafana_data/
+loki_data/

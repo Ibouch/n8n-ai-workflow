@@ -1,0 +1,114 @@
+# Prometheus configuration for N8N monitoring
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'n8n-production'
+    environment: 'production'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - 'alertmanager:9093'
+
+# Load rules files
+rule_files:
+  - 'alerts.yml'
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    metrics_path: '/metrics'
+
+  # N8N metrics
+  - job_name: 'n8n'
+    static_configs:
+      - targets: ['n8n:5678']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    
+  # PostgreSQL exporter (if deployed)
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+    scrape_interval: 30s
+    
+  # Redis exporter (if deployed)
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+    scrape_interval: 30s
+    
+
+  # Node exporter for system metrics (if deployed)
+  - job_name: 'node'
+    static_configs:
+      - targets: ['node-exporter:9100']
+    scrape_interval: 30s
+    
+  # Docker metrics via cAdvisor (if deployed)
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+    scrape_interval: 30s
+    
+
+
+# Basic alerting rules (create rules/*.yml files for detailed alerts)
+# Example alert rules to be placed in /etc/prometheus/rules/n8n-alerts.yml:
+#
+# groups:
+#   - name: n8n_alerts
+#     interval: 30s
+#     rules:
+#       - alert: N8NDown
+#         expr: up{job="n8n"} == 0
+#         for: 5m
+#         labels:
+#           severity: critical
+#         annotations:
+#           summary: "N8N is down"
+#           description: "N8N has been down for more than 5 minutes"
+#       
+#       - alert: HighMemoryUsage
+#         expr: (container_memory_usage_bytes{name="n8n-app"} / container_spec_memory_limit_bytes{name="n8n-app"}) > 0.9
+#         for: 5m
+#         labels:
+#           severity: warning
+#         annotations:
+#           summary: "High memory usage on N8N"
+#           description: "N8N memory usage is above 90%"
+#       
+#       - alert: HighCPUUsage
+#         expr: rate(container_cpu_usage_seconds_total{name="n8n-app"}[5m]) > 0.9
+#         for: 5m
+#         labels:
+#           severity: warning
+#         annotations:
+#           summary: "High CPU usage on N8N"
+#           description: "N8N CPU usage is above 90%"
+#       
+#       - alert: DatabaseDown
+#         expr: up{job="postgres"} == 0
+#         for: 1m
+#         labels:
+#           severity: critical
+#         annotations:
+#           summary: "PostgreSQL is down"
+#           description: "PostgreSQL database is not responding"
+#       
+#       - alert: WorkflowExecutionErrors
+#         expr: rate(n8n_workflow_execution_error_total[5m]) > 0.1
+#         for: 5m
+#         labels:
+#           severity: warning
+#         annotations:
+#           summary: "High workflow error rate"
+#           description: "Workflow error rate is above 10%"

@@ -1,0 +1,58 @@
+#include <tunables/global>
+
+profile nginx-profile flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+  #include <abstractions/bash>
+  #include <abstractions/consoles>
+  #include <abstractions/nameservice>
+  #include <abstractions/ssl_certs>
+
+  # Network access
+  network inet tcp,
+  network inet6 tcp,
+  capability net_bind_service,
+
+  # File system access
+  / r,
+  /bin/** mr,
+  /lib/** mr,
+  /lib64/** mr,
+  /usr/** mr,
+  /etc/** r,
+  /etc/nginx/** r,
+  /etc/ssl/** r,
+
+  # Nginx specific directories
+  /var/cache/nginx/** rw,
+  /var/log/nginx/** w,
+  /var/run/** rw,
+  /tmp/** rw,
+
+  # Nginx binary
+  /usr/sbin/nginx ix,
+
+  # Deny dangerous operations
+  deny @{PROC}/sys/kernel/** w,
+  deny /sys/module/apparmor/parameters/enabled w,
+  deny /dev/mem r,
+  deny /dev/kmem r,
+  deny mount,
+  deny umount,
+  deny ptrace,
+
+  # Required capabilities for Nginx
+  capability chown,
+  capability dac_override,
+  capability setgid,
+  capability setuid,
+  capability net_bind_service,
+
+  # Deny other capabilities
+  deny capability sys_admin,
+  deny capability sys_chroot,
+  deny capability sys_module,
+  deny capability sys_rawio,
+  deny capability sys_time,
+  deny capability net_admin,
+  deny capability net_raw,
+}

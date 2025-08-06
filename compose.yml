@@ -1,0 +1,364 @@
+# ==============================================================================
+# YAML ANCHORS - Reusable configuration templates
+# ==============================================================================
+
+# Security hardening baseline applied to all containers
+x-hardening: &hardening
+  read_only: true                                    # Immutable root filesystem
+  security_opt:
+    - no-new-privileges:true                         # Prevent privilege escalation
+    - seccomp:./security/seccomp-profile.json       # Restrict system calls
+  cap_drop:
+    - ALL                                           # Drop all Linux capabilities
+
+# Standardized logging configuration with rotation
+x-logging: &logging
+  driver: "json-file"
+  options:
+    max-size: "10m"                                 # Rotate at 10MB
+    max-file: "3"                                   # Keep 3 historical files
+
+# Base tmpfs mount for containers requiring temporary storage
+x-tmpfs-base: &tmpfs-base
+  - /tmp:noexec,nosuid,size=100m
+
+# Resource allocation templates for different service tiers
+x-small-resources: &small-resources                 # Proxy, cache services
+  limits:
+    cpus: '1'
+    memory: 512M
+  reservations:
+    cpus: '0.5'
+    memory: 128M
+
+x-medium-resources: &medium-resources               # Database services
+  limits:
+    cpus: '2'
+    memory: 2G
+  reservations:
+    cpus: '0.5'
+    memory: 512M
+
+x-large-resources: &large-resources                 # Application services
+  limits:
+    cpus: '4'
+    memory: 4G
+  reservations:
+    cpus: '1'
+    memory: 1G
+
+services:
+  # ==============================================================================
+  # DATABASE LAYER
+  # ==============================================================================
+  
+  # PostgreSQL - Primary database for N8N workflows and user data
+  postgres:
+    <<: *hardening
+    image: postgres:16-alpine
+    container_name: n8n-postgres
+    restart: unless-stopped
+    user: "70:70"
+    security_opt:
+      - no-new-privileges:true
+      - apparmor:postgres-profile
+      - seccomp:./security/seccomp-profile.json
+    cap_add:                                        # Minimal capabilities for PostgreSQL operation
+      - CHOWN                                       # Change file ownership
+      - DAC_OVERRIDE                                # Bypass file permissions
+      - FOWNER                                      # Bypass permission checks as file owner
+      - SETGID                                      # Set group ID
+      - SETUID                                      # Set user ID
+    tmpfs:                                          # Memory-backed writable storage
+      - /tmp:noexec,nosuid,size=100m                # Temporary files
+      - /var/run/postgresql:noexec,nosuid,size=100m # PostgreSQL runtime files
+      - /dev/shm:size=256m                          # Shared memory for PostgreSQL performance
+    environment:
+      - POSTGRES_USER_FILE=/run/secrets/postgres_user    # Read username from Docker secret
+      - POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password # Read password from Docker secret
+      - POSTGRES_DB=${POSTGRES_DB:-n8n}                  # Database name (default: n8n)
+      - POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256 --auth-local=scram-sha-256 # Strong authentication
+    secrets:                                            # Docker secrets for secure credential injection
+      - postgres_user
+      - postgres_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data          # Persistent database storage
+      - ./scripts/postgres-init:/docker-entrypoint-initdb.d:ro # Initialization scripts
+    networks:
+      - n8n-backend                                     # Internal network, no external access
+    healthcheck:                                        # Monitor database availability
+      test: >
+        CMD-SHELL pg_isready -U $(cat /run/secrets/postgres_user) -d ${POSTGRES_DB:-n8n}
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    logging: *logging
+    deploy:
+      resources: *medium-resources
+
+  # ==============================================================================
+  # APPLICATION LAYER
+  # ==============================================================================
+  
+  # N8N - Workflow automation platform and primary application
+  n8n:
+    <<: *hardening
+    image: n8nio/n8n:latest
+    container_name: n8n-app
+    restart: unless-stopped
+    user: "1000:1000"
+    security_opt:
+      - no-new-privileges:true
+      - apparmor:n8n-profile
+      - seccomp:./security/seccomp-profile.json
+    tmpfs:                                              # Memory-backed writable storage
+      - /tmp:noexec,nosuid,size=100m                    # Temporary files
+      - /home/node/.n8n/logs:noexec,nosuid,size=50m     # N8N log files
+    depends_on:                                         # Wait for database to be healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      # Database connection configuration
+      - DB_TYPE=postgresdb                             # Use PostgreSQL as primary database
+      - DB_POSTGRESDB_HOST=postgres                    # Database service hostname
+      - DB_POSTGRESDB_PORT=5432                        # Standard PostgreSQL port
+      - DB_POSTGRESDB_DATABASE=${POSTGRES_DB:-n8n}     # Database name
+      - DB_POSTGRESDB_USER_FILE=/run/secrets/postgres_user # Username from Docker secret
+      - DB_POSTGRESDB_PASSWORD_FILE=/run/secrets/postgres_password # Password from Docker secret
+      - DB_POSTGRESDB_SSL_ENABLED=false               # SSL disabled for internal network
+      
+      # Authentication and access control
+      - N8N_BASIC_AUTH_ACTIVE=${N8N_BASIC_AUTH_ACTIVE:-true} # Enable basic authentication
+      - N8N_BASIC_AUTH_USER_FILE=/run/secrets/n8n_user    # Admin username from secret
+      - N8N_BASIC_AUTH_PASSWORD_FILE=/run/secrets/n8n_password # Admin password from secret
+      - N8N_HOST=${N8N_HOST:-localhost}                # Public hostname for N8N
+      - N8N_PORT=5678                                  # Internal service port
+      - N8N_PROTOCOL=${N8N_PROTOCOL:-https}            # External protocol (HTTPS via nginx)
+      - WEBHOOK_URL=${WEBHOOK_URL:-https://localhost/} # Base URL for webhooks
+      - N8N_ENCRYPTION_KEY_FILE=/run/secrets/n8n_encryption_key # Data encryption key
+      
+      # Security hardening
+      - N8N_SECURE_COOKIE=${N8N_SECURE_COOKIE:-true}   # Secure cookies for HTTPS
+      - N8N_EDITOR_BASE_URL=${N8N_EDITOR_BASE_URL:-https://localhost/} # Editor base URL
+      
+      # Performance and monitoring  
+      - N8N_METRICS=${N8N_METRICS:-true}               # Enable Prometheus metrics
+      - EXECUTIONS_PROCESS=${EXECUTIONS_PROCESS:-main} # Process handling mode
+      - EXECUTIONS_MODE=${EXECUTIONS_MODE:-queue}      # Queue mode for scalability
+      - EXECUTIONS_TIMEOUT=${EXECUTIONS_TIMEOUT:-3600} # Workflow timeout (1 hour)
+      - EXECUTIONS_TIMEOUT_MAX=${EXECUTIONS_TIMEOUT_MAX:-7200} # Maximum timeout (2 hours)
+      
+      # Queue configuration (Redis-backed job queue)
+      - QUEUE_BULL_REDIS_HOST=redis                    # Redis service hostname
+      - QUEUE_BULL_REDIS_PORT=6379                     # Standard Redis port
+      - QUEUE_BULL_REDIS_PASSWORD_FILE=/run/secrets/redis_password # Redis auth from secret
+      
+      # Feature toggles
+      - N8N_VERSION_NOTIFICATIONS_ENABLED=${N8N_VERSION_NOTIFICATIONS_ENABLED:-true} # Update notifications
+      - N8N_DIAGNOSTICS_ENABLED=${N8N_DIAGNOSTICS_ENABLED:-false} # Disable telemetry
+      - N8N_PERSONALIZATION_ENABLED=${N8N_PERSONALIZATION_ENABLED:-false} # Disable personalization
+      
+      # SMTP configuration for user management
+      - N8N_EMAIL_MODE=smtp
+      - N8N_SMTP_HOST=${SMTP_HOST:-localhost}
+      - N8N_SMTP_PORT=${SMTP_PORT:-587}
+      - N8N_SMTP_USER=${SMTP_USERNAME:-}
+      - N8N_SMTP_PASS_FILE=/run/secrets/smtp_password
+      - N8N_SMTP_SENDER="${SMTP_SENDER_NAME:-N8N System} <${SMTP_FROM:-admin@localhost}>"
+      - N8N_SMTP_SSL=${SMTP_SSL:-false}
+      
+      # Localization
+      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE:-UTC}      # Server timezone
+      - TZ=${GENERIC_TIMEZONE:-UTC}                    # System timezone
+    secrets:
+      - postgres_user
+      - postgres_password
+      - n8n_user
+      - n8n_password
+      - n8n_encryption_key
+      - smtp_password
+    volumes:
+      - n8n_data:/home/node/.n8n                       # Persistent N8N data and workflows
+      - ./custom-nodes:/home/node/.n8n/custom:ro       # Custom N8N nodes (read-only)
+    networks:
+      - n8n-backend                                     # Database and cache access
+      - n8n-frontend                                    # Nginx proxy access
+    healthcheck:                                        # Monitor N8N application health
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:5678/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    logging: *logging
+    deploy:
+      resources: *large-resources
+
+  # ==============================================================================
+  # REVERSE PROXY & TLS TERMINATION
+  # ==============================================================================
+  
+  # Nginx - Reverse proxy with TLS termination and security headers
+  nginx:
+    <<: *hardening
+    image: nginx:1.27-alpine
+    container_name: n8n-nginx
+    restart: unless-stopped
+    user: "101:101"
+    security_opt:
+      - no-new-privileges:true
+      - apparmor:nginx-profile
+      - seccomp:./security/seccomp-profile.json
+    cap_add:                                            # Minimal capabilities for nginx operation
+      - CHOWN                                           # Change file ownership
+      - DAC_OVERRIDE                                    # Bypass file permissions
+      - SETGID                                          # Set group ID
+      - SETUID                                          # Set user ID
+      - NET_BIND_SERVICE                                # Bind to privileged ports (80, 443)
+    tmpfs:                                              # Memory-backed writable storage
+      - /tmp:noexec,nosuid,size=100m                    # Temporary files
+      - /var/run:noexec,nosuid,size=100m                # Runtime files (PID, sockets)
+      - /var/cache/nginx:noexec,nosuid,size=100m        # Nginx cache files
+    depends_on:                                         # Wait for N8N to be healthy
+      n8n:
+        condition: service_healthy
+    ports:                                              # External access points
+      - "80:80"                                         # HTTP traffic (redirects to HTTPS)
+      - "443:443"                                       # HTTPS traffic with TLS termination
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro             # Site configurations
+      - ./nginx/ssl:/etc/nginx/ssl:ro                   # SSL certificates and keys
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro     # Main nginx configuration
+      - nginx_logs:/var/log/nginx                       # Access and error logs
+    networks:
+      - n8n-frontend                                    # Frontend network for external access
+    healthcheck:                                        # Monitor nginx configuration validity
+      test: ["CMD", "nginx", "-t"]                      # Test configuration syntax
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging: *logging
+    deploy:
+      resources: *small-resources
+
+  # ==============================================================================
+  # CACHE & SESSION STORAGE
+  # ==============================================================================
+  
+  # Redis - In-memory cache and N8N queue backend
+  redis:
+    <<: *hardening
+    image: redis:7-alpine
+    container_name: n8n-redis
+    restart: unless-stopped
+    user: "999:999"
+    security_opt:
+      - no-new-privileges:true
+      - apparmor:redis-profile
+      - seccomp:./security/seccomp-profile.json
+    tmpfs:                                              # Memory-backed writable storage
+      - /tmp:noexec,nosuid,size=100m                    # Temporary files
+    command: >                                          # Redis configuration via command line
+      sh -c 'redis-server
+      --requirepass "$$(cat /run/secrets/redis_password)"  # Password authentication
+      --maxmemory 256mb                                 # Memory limit for LRU eviction
+      --maxmemory-policy allkeys-lru                    # Evict least recently used keys
+      --save 60 1000                                    # Snapshot every minute if 1000+ changes
+      --appendonly yes'                                 # Enable append-only file for durability
+    secrets:                                            # Docker secrets for secure credential injection
+      - redis_password                                  # Redis authentication password
+    volumes:
+      - redis_data:/data                                # Persistent Redis data storage
+    networks:
+      - n8n-backend                                     # Internal network for N8N queue access
+    healthcheck:                                        # Monitor Redis availability
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"] # Test basic Redis operation
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging: *logging
+    deploy:
+      resources: *small-resources
+
+# ==============================================================================
+# NETWORK ARCHITECTURE - Defense-in-depth network security
+# ==============================================================================
+networks:
+  # Frontend network - DMZ for external-facing services
+  n8n-frontend:
+    driver: bridge                                      # Standard bridge networking
+    driver_opts:
+      com.docker.network.bridge.name: br-n8n-front     # Custom bridge name
+      com.docker.network.bridge.enable_icc: "false"    # Disable inter-container communication
+    ipam:                                               # IP address management
+      driver: default
+      config:
+        - subnet: 172.20.0.0/24                         # Frontend network CIDR
+          gateway: 172.20.0.1                           # Gateway for external access
+  
+  # Backend network - Internal services only (no internet access)
+  n8n-backend:
+    driver: bridge
+    internal: true                                      # No external network access
+    driver_opts:
+      com.docker.network.bridge.name: br-n8n-back      # Custom bridge name
+      com.docker.network.bridge.enable_icc: "false"    # Disable inter-container communication
+    ipam:                                               # IP address management
+      driver: default
+      config:
+        - subnet: 172.21.0.0/24                         # Backend network CIDR
+          gateway: 172.21.0.1                           # Internal gateway
+
+# ==============================================================================
+# PERSISTENT STORAGE - Optimized volumes for performance and security
+# ==============================================================================
+volumes:
+  # Database persistent storage
+  postgres_data:
+    driver: local                                       # Local volume driver
+    driver_opts:
+      type: ext4                                        # Filesystem type
+      o: "defaults,noatime"                             # Mount options (noatime for performance)
+  
+  # N8N application data and workflows
+  n8n_data:
+    driver: local
+    driver_opts:
+      type: ext4
+      o: "defaults,noatime"
+  
+  # Redis persistent data and AOF logs
+  redis_data:
+    driver: local
+    driver_opts:
+      type: ext4
+      o: "defaults,noatime"
+  
+  # Nginx access and error logs
+  nginx_logs:
+    driver: local
+
+# ==============================================================================
+# SECRETS MANAGEMENT - File-based Docker secrets for secure credential injection
+# ==============================================================================
+secrets:
+  # PostgreSQL authentication
+  postgres_user:
+    file: ./secrets/postgres_user.txt                  # Database username
+  postgres_password:
+    file: ./secrets/postgres_password.txt              # Database password
+  
+  # N8N authentication and encryption
+  n8n_user:
+    file: ./secrets/n8n_user.txt
+  n8n_password:
+    file: ./secrets/n8n_password.txt
+  n8n_encryption_key:
+    file: ./secrets/n8n_encryption_key.txt
+  smtp_password:
+    file: ./secrets/smtp_password.txt
+  
+  # Redis authentication
+  redis_password:
+    file: ./secrets/redis_password.txt                 # Redis authentication password

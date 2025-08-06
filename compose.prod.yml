@@ -1,0 +1,450 @@
+# ==============================================================================
+# PRODUCTION ENVIRONMENT OVERRIDES
+# ==============================================================================
+# This file provides production-specific configurations and monitoring stack
+# Use with: docker-compose -f compose.yml -f compose.prod.yml up -d
+
+# ==============================================================================
+# MONITORING STACK YAML ANCHORS
+# ==============================================================================
+
+# Security hardening for monitoring services
+x-monitoring-hardening: &monitoring-hardening
+  read_only: true                                    # Immutable root filesystem
+  security_opt:
+    - no-new-privileges:true                         # Prevent privilege escalation
+    - seccomp:./security/seccomp-profile.json       # Restrict system calls
+  cap_drop:
+    - ALL                                           # Drop all Linux capabilities
+
+# Standard tmpfs for monitoring services
+x-monitoring-tmpfs: &monitoring-tmpfs
+  - /tmp:noexec,nosuid,size=100m                    # Memory-backed temporary storage
+
+# Resource templates for monitoring services
+x-monitoring-small-resources: &monitoring-small-resources  # Lightweight monitoring tools
+  limits:
+    cpus: '0.5'
+    memory: 512M
+  reservations:
+    cpus: '0.1'
+    memory: 128M
+
+x-monitoring-medium-resources: &monitoring-medium-resources # Core monitoring services
+  limits:
+    cpus: '1'
+    memory: 1G
+  reservations:
+    cpus: '0.25'
+    memory: 256M
+
+services:
+  # ==============================================================================
+  # PRODUCTION DATABASE OPTIMIZATIONS
+  # ==============================================================================
+  
+  # PostgreSQL production tuning and monitoring
+  postgres:
+    environment:
+      # Enhanced initialization with data integrity checks
+      - POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256 --auth-local=scram-sha-256 --data-checksums
+    command: >
+      postgres
+      -c shared_buffers=256MB
+      -c effective_cache_size=1GB
+      -c maintenance_work_mem=64MB
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=16MB
+      -c default_statistics_target=100
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=200
+      -c work_mem=4MB
+      -c min_wal_size=1GB
+      -c max_wal_size=4GB
+      -c max_worker_processes=4
+      -c max_parallel_workers_per_gather=2
+      -c max_parallel_workers=4
+      -c max_parallel_maintenance_workers=2
+      -c log_statement=mod
+      -c log_connections=on
+      -c log_disconnections=on
+      -c log_duration=on
+      -c log_min_duration_statement=1000
+      -c shared_preload_libraries='pg_stat_statements'
+    deploy:
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+  # ==============================================================================
+  # PRODUCTION APPLICATION OPTIMIZATIONS
+  # ==============================================================================
+  
+  # N8N production performance and data management
+  n8n:
+    environment:
+      # Node.js production optimizations
+      - NODE_ENV=production                             # Enable production mode
+      - NODE_OPTIONS=--max-old-space-size=3072          # Increase heap size to 3GB
+      
+      # Data lifecycle management
+      - EXECUTIONS_DATA_PRUNE=true                      # Enable automatic data cleanup
+      - EXECUTIONS_DATA_MAX_AGE=336                     # Keep execution data for 14 days
+      - EXECUTIONS_DATA_PRUNE_TIMEOUT=3600              # Cleanup timeout (1 hour)
+      
+      # Production security features
+      - N8N_DISABLE_PRODUCTION_MAIN_PROCESS=false       # Keep main process enabled
+      - N8N_SKIP_WEBHOOK_DEREGISTRATION_SHUTDOWN=false  # Proper webhook cleanup on shutdown
+      - N8N_BLOCK_FILE_ACCESS_TO_N8N_FILES=true         # Block access to internal N8N files
+      
+      # Metrics configuration
+      - N8N_METRICS_PREFIX=n8n_                         # Prometheus metrics prefix
+    deploy:
+      restart_policy:
+        condition: any
+        delay: 10s
+        max_attempts: 3
+        window: 120s
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+        monitor: 60s
+        max_failure_ratio: 0.3
+
+  # ==============================================================================
+  # PRODUCTION REVERSE PROXY OPTIMIZATIONS
+  # ==============================================================================
+  
+  # Nginx high-performance production tuning
+  nginx:
+    sysctls:                                            # Kernel-level network optimizations
+      - net.core.somaxconn=65535                        # Maximum socket connections queue
+      - net.ipv4.ip_local_port_range=1024 65535         # Ephemeral port range
+    ulimits:                                            # Resource limits
+      nofile:                                           # File descriptor limits
+        soft: 65536                                     # Soft limit for file descriptors
+        hard: 65536                                     # Hard limit for file descriptors
+    deploy:
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+  # ==============================================================================
+  # MONITORING & OBSERVABILITY STACK
+  # ==============================================================================
+  
+  # Prometheus - Metrics collection and alerting system
+  prometheus:
+    <<: *monitoring-hardening
+    image: prom/prometheus:latest
+    container_name: n8n-prometheus
+    restart: unless-stopped
+    user: "65534:65534"                                 # Non-root nobody user
+    tmpfs: *monitoring-tmpfs
+    command:                                            # Prometheus configuration
+      - '--config.file=/etc/prometheus/prometheus.yml' # Main configuration file
+      - '--storage.tsdb.path=/prometheus'               # Time series database path
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries' # Console libraries
+      - '--web.console.templates=/usr/share/prometheus/consoles' # Console templates
+      - '--storage.tsdb.retention.time=30d'             # Retain metrics for 30 days
+      - '--web.enable-lifecycle'                        # Enable lifecycle API for reloads
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro # Main config
+      - ./monitoring/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro # Alert rules
+      - prometheus_data:/prometheus                      # Persistent metrics storage
+    networks:
+      - n8n-backend                                     # Internal monitoring network
+    ports:
+      - "127.0.0.1:9090:9090"                           # Local access only (security)
+    deploy:
+      resources: *monitoring-medium-resources
+
+  grafana:
+    <<: *monitoring-hardening
+    image: grafana/grafana:latest
+    container_name: n8n-grafana
+    restart: unless-stopped
+    user: "472:472"  # grafana user
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
+      - /var/lib/grafana/plugins:noexec,nosuid,size=100m
+    environment:
+      - GF_SECURITY_ADMIN_USER_FILE=/run/secrets/grafana_user
+      - GF_SECURITY_ADMIN_PASSWORD_FILE=/run/secrets/grafana_password
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-piechart-panel
+      - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-http://localhost:3000}
+      - GF_ANALYTICS_REPORTING_ENABLED=false
+      - GF_ANALYTICS_CHECK_FOR_UPDATES=false
+    secrets:
+      - grafana_user
+      - grafana_password
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    networks:
+      - n8n-backend
+      - n8n-frontend
+    depends_on:
+      - prometheus
+    deploy:
+      resources: *monitoring-small-resources
+
+  # Log aggregation
+  loki:
+    image: grafana/loki:latest
+    container_name: n8n-loki
+    restart: unless-stopped
+    user: "10001:10001"  # loki user
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+      - seccomp:./security/seccomp-profile.json
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./monitoring/loki/loki-config.yaml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+    networks:
+      - n8n-backend
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+
+  # Docker logging driver
+  promtail:
+    image: grafana/promtail:latest
+    container_name: n8n-promtail
+    restart: unless-stopped
+    user: "10001:10001"  # promtail user
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+      - seccomp:./security/seccomp-profile.json
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
+    volumes:
+      - /var/log:/var/log:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./monitoring/promtail/promtail-config.yaml:/etc/promtail/config.yml:ro
+    networks:
+      - n8n-backend
+    command: -config.file=/etc/promtail/config.yml
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+
+  # Alerting
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: n8n-alertmanager
+    restart: unless-stopped
+    user: "65534:65534"  # nobody user
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+      - seccomp:./security/seccomp-profile.json
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
+    environment:
+      - SMTP_HOST=${SMTP_HOST:-localhost}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_FROM=${SMTP_FROM:-alertmanager@localhost}
+      - SMTP_USERNAME=${SMTP_USERNAME:-alertmanager@localhost}
+      - SMTP_TLS=${SMTP_TLS:-false}
+      - ALERT_EMAIL_TO=${ALERT_EMAIL_TO:-admin@localhost}
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=http://localhost:9093'
+      - '--web.route-prefix=/'
+    secrets:
+      - smtp_password
+    volumes:
+      - ./monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    networks:
+      - n8n-backend
+    ports:
+      - "127.0.0.1:9093:9093"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+
+  # PostgreSQL Exporter
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    container_name: n8n-postgres-exporter
+    restart: unless-stopped
+    user: "65534:65534"  # nobody user
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+      - seccomp:./security/seccomp-profile.json
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
+    environment:
+      - DATA_SOURCE_URI=postgres:5432/n8n?sslmode=disable
+      - DATA_SOURCE_USER_FILE=/run/secrets/postgres_user
+      - DATA_SOURCE_PASS_FILE=/run/secrets/postgres_password
+    secrets:
+      - postgres_user
+      - postgres_password
+    networks:
+      - n8n-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+
+  # Redis Exporter
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    container_name: n8n-redis-exporter
+    restart: unless-stopped
+    user: "59000:59000"  # redis_exporter user
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+      - seccomp:./security/seccomp-profile.json
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
+    environment:
+      - REDIS_ADDR=redis://redis:6379
+      - REDIS_PASSWORD_FILE=/run/secrets/redis_password
+    secrets:
+      - redis_password
+    networks:
+      - n8n-backend
+    depends_on:
+      - redis
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+
+  # Node Exporter for system metrics
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: n8n-node-exporter
+    restart: unless-stopped
+    user: "65534:65534"  # nobody user
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+      - seccomp:./security/seccomp-profile.json
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    networks:
+      - n8n-backend
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+
+  # cAdvisor for container metrics
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: n8n-cadvisor
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+      - seccomp:./security/seccomp-profile.json
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    networks:
+      - n8n-backend
+    privileged: false
+    devices:
+      - /dev/kmsg
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+
+volumes:
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  loki_data:
+    driver: local
+  alertmanager_data:
+    driver: local
+
+secrets:
+  grafana_user:
+    file: ./secrets/grafana_user.txt
+  grafana_password:
+    file: ./secrets/grafana_password.txt
+  smtp_password:
+    file: ./secrets/smtp_password.txt

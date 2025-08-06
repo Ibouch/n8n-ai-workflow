@@ -1,0 +1,165 @@
+groups:
+- name: n8n-infrastructure
+  rules:
+  # Container Health Alerts
+  - alert: ContainerDown
+    expr: up == 0
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Container {{ $labels.instance }} is down"
+      description: "Container {{ $labels.instance }} has been down for more than 1 minute."
+
+  - alert: ContainerHighMemoryUsage
+    expr: (container_memory_usage_bytes / container_spec_memory_limit_bytes) * 100 > 90
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High memory usage on {{ $labels.container_label_com_docker_compose_service }}"
+      description: "Container {{ $labels.container_label_com_docker_compose_service }} is using {{ $value }}% of its memory limit."
+
+  - alert: ContainerHighCPUUsage
+    expr: (rate(container_cpu_usage_seconds_total[5m]) * 100) > 80
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High CPU usage on {{ $labels.container_label_com_docker_compose_service }}"
+      description: "Container {{ $labels.container_label_com_docker_compose_service }} is using {{ $value }}% CPU."
+
+  # PostgreSQL Alerts
+  - alert: PostgreSQLDown
+    expr: pg_up == 0
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      summary: "PostgreSQL is down"
+      description: "PostgreSQL database is not responding."
+
+  - alert: PostgreSQLHighConnections
+    expr: pg_stat_database_numbackends / pg_settings_max_connections * 100 > 80
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "PostgreSQL high connection usage"
+      description: "PostgreSQL is using {{ $value }}% of max connections."
+
+  - alert: PostgreSQLReplicationLag
+    expr: pg_replication_lag > 30
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "PostgreSQL replication lag"
+      description: "PostgreSQL replication lag is {{ $value }} seconds."
+
+  # Redis Alerts
+  - alert: RedisDown
+    expr: redis_up == 0
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Redis is down"
+      description: "Redis server is not responding."
+
+  - alert: RedisHighMemoryUsage
+    expr: redis_memory_used_bytes / redis_memory_max_bytes * 100 > 90
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Redis high memory usage"
+      description: "Redis is using {{ $value }}% of max memory."
+
+  # N8N Application Alerts
+  - alert: N8NDown
+    expr: up{job="n8n"} == 0
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      summary: "N8N application is down"
+      description: "N8N application is not responding."
+
+  - alert: N8NHighResponseTime
+    expr: http_request_duration_seconds{quantile="0.95"} > 2
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "N8N high response time"
+      description: "N8N 95th percentile response time is {{ $value }}s."
+
+  # System Resource Alerts
+  - alert: HighDiskUsage
+    expr: (node_filesystem_size_bytes - node_filesystem_free_bytes) / node_filesystem_size_bytes * 100 > 85
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High disk usage"
+      description: "Disk usage is {{ $value }}% on {{ $labels.device }}."
+
+  - alert: HighLoadAverage
+    expr: node_load1 > 2
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High load average"
+      description: "Load average is {{ $value }}."
+
+  # Security Alerts
+  - alert: UnauthorizedAccess
+    expr: increase(nginx_http_requests_total{status=~"4.."}[5m]) > 100
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High number of 4xx errors"
+      description: "{{ $value }} 4xx errors in the last 5 minutes."
+
+  - alert: SuspiciousActivity
+    expr: rate(nginx_http_requests_total[5m]) > 100
+    for: 1m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High request rate detected"
+      description: "Request rate is {{ $value }} req/s."
+
+- name: security-monitoring
+  rules:
+  # Container Security Alerts
+  - alert: ContainerRunningAsRoot
+    expr: container_processes{user="root"} > 0
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Container running as root"
+      description: "Container {{ $labels.name }} is running processes as root user."
+
+  - alert: UnexpectedNetworkConnections
+    expr: increase(container_network_transmit_bytes_total[5m]) > 100000000  # 100MB
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High network traffic from container"
+      description: "Container {{ $labels.name }} transmitted {{ $value }} bytes in 5 minutes."
+
+  # Failed Login Attempts
+  - alert: FailedLogins
+    expr: increase(nginx_http_requests_total{status="401"}[5m]) > 10
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Multiple failed login attempts"
+      description: "{{ $value }} failed login attempts in the last 5 minutes."

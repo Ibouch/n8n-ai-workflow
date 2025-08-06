@@ -1,0 +1,56 @@
+#include <tunables/global>
+
+profile redis-profile flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+  #include <abstractions/consoles>
+  #include <abstractions/nameservice>
+
+  # Network access
+  network inet tcp,
+  network inet udp,
+  network inet6 tcp,
+  network inet6 udp,
+
+  # File system access
+  / r,
+  /bin/** mr,
+  /lib/** mr,
+  /lib64/** mr,
+  /usr/** mr,
+  /etc/** r,
+
+  # Redis specific directories
+  /data/** rw,
+  /tmp/** rw,
+  /var/tmp/** rw,
+
+  # Redis binary
+  /usr/local/bin/redis-server ix,
+  /usr/local/bin/redis-cli ix,
+
+  # Deny dangerous operations
+  deny @{PROC}/sys/kernel/** w,
+  deny /sys/module/apparmor/parameters/enabled w,
+  deny /dev/mem r,
+  deny /dev/kmem r,
+  deny mount,
+  deny umount,
+  deny ptrace,
+  deny signal,
+
+  # Capabilities
+  deny capability sys_admin,
+  deny capability sys_chroot,
+  deny capability sys_module,
+  deny capability sys_rawio,
+  deny capability sys_time,
+  deny capability setuid,
+  deny capability setgid,
+  deny capability chown,
+  deny capability dac_override,
+  deny capability fowner,
+  deny capability fsetid,
+  deny capability kill,
+  deny capability net_admin,
+  deny capability net_raw,
+}

@@ -1,0 +1,62 @@
+#include <tunables/global>
+
+profile n8n-profile flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+  #include <abstractions/bash>
+  #include <abstractions/consoles>
+  #include <abstractions/nameservice>
+  #include <abstractions/openssl>
+  #include <abstractions/ssl_certs>
+
+  # Network access
+  network inet tcp,
+  network inet udp,
+  network inet6 tcp,
+  network inet6 udp,
+
+  # File system access
+  / r,
+  /bin/** mr,
+  /lib/** mr,
+  /lib64/** mr,
+  /usr/** mr,
+  /etc/** r,
+  /etc/ssl/** r,
+  /etc/ca-certificates/** r,
+
+  # Application directories
+  /home/node/.n8n/** rw,
+  /home/node/.n8n/logs/** w,
+  /tmp/** rw,
+  /var/tmp/** rw,
+
+  # Node.js specific
+  /usr/local/bin/node ix,
+  /usr/local/lib/node_modules/** r,
+
+  # Deny dangerous operations
+  deny @{PROC}/sys/kernel/** w,
+  deny /sys/module/apparmor/parameters/enabled w,
+  deny /dev/mem r,
+  deny /dev/kmem r,
+  deny mount,
+  deny umount,
+  deny ptrace,
+  deny signal,
+
+  # Capabilities
+  deny capability sys_admin,
+  deny capability sys_chroot,
+  deny capability sys_module,
+  deny capability sys_rawio,
+  deny capability sys_time,
+  deny capability setuid,
+  deny capability setgid,
+  deny capability chown,
+  deny capability dac_override,
+  deny capability fowner,
+  deny capability fsetid,
+  deny capability kill,
+  deny capability net_admin,
+  deny capability net_raw,
+}
