@@ -12,8 +12,8 @@ set -euo pipefail
 # ==============================================================================
 
 # Script paths and project structure
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
+COMMON_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$(dirname "$COMMON_LIB_DIR")")"
 SECRETS_DIR="${PROJECT_ROOT}/secrets"
 
 # Default log file (can be overridden by calling scripts)
@@ -309,11 +309,11 @@ secret_exists() {
 validate_secrets() {
     # Source validation.sh if the function doesn't exist yet
     if ! command -v validate_secrets_configuration >/dev/null 2>&1; then
-        local validation_lib="${SCRIPT_DIR}/validation.sh"
+        local validation_lib="${COMMON_LIB_DIR}/validation.sh"
         if [ -f "$validation_lib" ]; then
             source "$validation_lib"
         else
-            # Fallback to direct path if SCRIPT_DIR doesn't work
+            # Fallback to direct path if COMMON_LIB_DIR doesn't work
             source "$(dirname "${BASH_SOURCE[0]}")/validation.sh"
         fi
     fi
@@ -493,7 +493,7 @@ init_common() {
     local skip_secrets_validation="${1:-false}"
     
     # Validate basic requirements
-    require_commands "docker" "docker compose"
+    require_commands "docker" "docker-compose"
     validate_project_structure "$skip_secrets_validation"
     
     # Set up signal handlers for cleanup
