@@ -39,21 +39,12 @@ if [ "${1:-}" = "--force" ]; then
 fi
 
 # PostgreSQL secrets
-if [ ! -f "${SECRETS_DIR}/postgres_user.txt" ] || [ "$FORCE_REGENERATE" = true ]; then
-    echo "n8n_admin" > "${SECRETS_DIR}/postgres_user.txt"
-    log_success "Generated PostgreSQL user"
-fi
-
 if [ ! -f "${SECRETS_DIR}/postgres_password.txt" ] || [ "$FORCE_REGENERATE" = true ]; then
     generate_password 32 > "${SECRETS_DIR}/postgres_password.txt"
     log_success "Generated PostgreSQL password"
 fi
 
-# N8N secrets
-if [ ! -f "${SECRETS_DIR}/n8n_user.txt" ] || [ "$FORCE_REGENERATE" = true ]; then
-    echo "admin" > "${SECRETS_DIR}/n8n_user.txt"
-    log_success "Generated N8N user"
-fi
+# N8N authentication secrets
 
 if [ ! -f "${SECRETS_DIR}/n8n_password.txt" ] || [ "$FORCE_REGENERATE" = true ]; then
     generate_password 24 > "${SECRETS_DIR}/n8n_password.txt"
@@ -71,12 +62,7 @@ if [ ! -f "${SECRETS_DIR}/redis_password.txt" ] || [ "$FORCE_REGENERATE" = true 
     log_success "Generated Redis password"
 fi
 
-# Grafana secrets
-if [ ! -f "${SECRETS_DIR}/grafana_user.txt" ] || [ "$FORCE_REGENERATE" = true ]; then
-    echo "admin" > "${SECRETS_DIR}/grafana_user.txt"
-    log_success "Generated Grafana user"
-fi
-
+# Grafana authentication secrets
 if [ ! -f "${SECRETS_DIR}/grafana_password.txt" ] || [ "$FORCE_REGENERATE" = true ]; then
     generate_password 24 > "${SECRETS_DIR}/grafana_password.txt"
     log_success "Generated Grafana password"

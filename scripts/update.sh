@@ -29,7 +29,7 @@ log_info "Performing comprehensive pre-flight checks..."
 
 # Validate project structure and requirements
 validate_project_structure
-require_commands "docker" "docker-compose"
+require_commands "docker" "docker compose"
 
 # Check Docker Compose configuration
 validate_compose_config
@@ -59,13 +59,13 @@ fi
 
 # 3. Pull latest images
 log_info "Pulling latest Docker images..."
-if ! docker-compose pull; then
+if ! docker compose pull; then
     error_exit "Failed to pull images"
 fi
 
 # 4. Show what will be updated
 log_info "Images to be updated:"
-docker-compose images | grep -E "n8n|postgres|redis|nginx" || true
+docker compose images | grep -E "n8n|postgres|redis|nginx" || true
 
 # 5. Confirm update
 if ! confirm_action "Proceed with update? This will update all services with minimal downtime" "N"; then
@@ -78,7 +78,7 @@ log_info "Starting rolling update..."
 
 # Update N8N (main application)
 log_info "Updating N8N application..."
-if ! docker-compose up -d --no-deps n8n; then
+if ! docker compose up -d --no-deps n8n; then
     error_exit "Failed to update N8N service"
 fi
 
@@ -86,7 +86,7 @@ fi
 log_info "Waiting for N8N to be healthy..."
 if ! wait_for_service_healthy "n8n" 300; then
     warn "N8N failed to become healthy within timeout. Attempting rollback..."
-    docker-compose up -d --no-deps n8n
+    docker compose up -d --no-deps n8n
     error_exit "Update failed. Attempted rollback to previous version."
 fi
 
@@ -94,18 +94,18 @@ log_success "N8N update completed successfully"
 
 # Update Nginx
 log_info "Updating Nginx..."
-if ! docker-compose up -d --no-deps nginx; then
+if ! docker compose up -d --no-deps nginx; then
     warn "Failed to update Nginx"
 fi
 
 # Update other services
 log_info "Updating supporting services..."
-docker-compose up -d --no-deps redis
+docker compose up -d --no-deps redis
 
 # Update monitoring stack if enabled
 if [ "${ENABLE_MONITORING:-true}" = "true" ]; then
     log_info "Updating monitoring stack..."
-    docker-compose -f compose.yml -f compose.prod.yml up -d --no-deps prometheus grafana loki promtail 2>/dev/null || warn "Some monitoring services failed to update"
+    docker compose -f compose.yml -f compose.prod.yml up -d --no-deps prometheus grafana loki promtail 2>/dev/null || warn "Some monitoring services failed to update"
 fi
 
 # 7. Clean up old images
@@ -147,7 +147,7 @@ log_info "  Update Timestamp: ${TIMESTAMP}"
 
 info "Next steps:"
 echo "1. Test your workflows to ensure everything is working correctly"
-echo "2. Monitor logs for any errors: docker-compose logs -f"
+echo "2. Monitor logs for any errors: docker compose logs -f"
 echo "3. If issues occur, restore from the pre-update backup"
 
 warn "Note: First workflow execution may be slower due to cache warming"

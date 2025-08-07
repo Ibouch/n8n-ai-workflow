@@ -43,7 +43,7 @@ else
     CHECKS_FAILED=$((CHECKS_FAILED + 1))
 fi
 
-# Check if docker-compose is available  
+# Check if docker compose is available  
 if perform_health_check "Docker Compose" "check_docker_compose"; then
     CHECKS_PASSED=$((CHECKS_PASSED + 1))
 else
@@ -185,7 +185,7 @@ echo "${MEMORY_STATS}"
 echo -e "\n${BLUE}7. SSL Certificate${NC}"
 echo "------------------"
 
-if docker-compose ps nginx | grep -q "Up"; then
+if docker compose ps nginx | grep -q "Up"; then
     # Check certificate expiration
     CERT_FILE="${PROJECT_ROOT}/nginx/ssl/fullchain.pem"
     if [ -f "${CERT_FILE}" ]; then

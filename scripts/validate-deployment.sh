@@ -88,8 +88,8 @@ info "Validating container security..."
 check_container_user() {
     local container="$1"
     local expected_user="$2"
-    if docker-compose ps -q "$container" >/dev/null 2>&1; then
-        local actual_user=$(docker inspect "$(docker-compose ps -q "$container" 2>/dev/null)" --format '{{.Config.User}}' 2>/dev/null || echo "")
+    if docker compose ps -q "$container" >/dev/null 2>&1; then
+        local actual_user=$(docker inspect "$(docker compose ps -q "$container" 2>/dev/null)" --format '{{.Config.User}}' 2>/dev/null || echo "")
         if [ "$actual_user" = "$expected_user" ]; then
             log "$container running as non-root user ($actual_user)"
         else
@@ -107,8 +107,8 @@ check_container_user "redis" "999:999"
 info "Checking read-only filesystem configuration..."
 readonly_services=("postgres" "n8n" "nginx" "redis")
 for service in "${readonly_services[@]}"; do
-    if docker-compose ps -q "$service" >/dev/null 2>&1; then
-        readonly_status=$(docker inspect "$(docker-compose ps -q "$service" 2>/dev/null)" --format '{{.HostConfig.ReadonlyRootfs}}' 2>/dev/null || echo "false")
+    if docker compose ps -q "$service" >/dev/null 2>&1; then
+        readonly_status=$(docker inspect "$(docker compose ps -q "$service" 2>/dev/null)" --format '{{.HostConfig.ReadonlyRootfs}}' 2>/dev/null || echo "false")
         if [ "$readonly_status" = "true" ]; then
             log "$service has read-only filesystem enabled"
         else
@@ -120,8 +120,8 @@ done
 # Check security options
 info "Checking security options..."
 for service in "${readonly_services[@]}"; do
-    if docker-compose ps -q "$service" >/dev/null 2>&1; then
-        security_opts=$(docker inspect "$(docker-compose ps -q "$service" 2>/dev/null)" --format '{{range .HostConfig.SecurityOpt}}{{.}} {{end}}' 2>/dev/null || echo "")
+    if docker compose ps -q "$service" >/dev/null 2>&1; then
+        security_opts=$(docker inspect "$(docker compose ps -q "$service" 2>/dev/null)" --format '{{range .HostConfig.SecurityOpt}}{{.}} {{end}}' 2>/dev/null || echo "")
         if echo "$security_opts" | grep -q "no-new-privileges"; then
             log "$service has no-new-privileges enabled"
         else
@@ -140,7 +140,7 @@ else
 fi
 
 # Check SSL certificates (if nginx is running)
-if docker-compose ps nginx 2>/dev/null | grep -q "Up"; then
+if docker compose ps nginx 2>/dev/null | grep -q "Up"; then
     info "Checking SSL configuration..."
     if [ -f "nginx/ssl/fullchain.pem" ] && [ -f "nginx/ssl/key.pem" ]; then
         log "SSL certificates are present"
@@ -158,15 +158,15 @@ if docker-compose ps nginx 2>/dev/null | grep -q "Up"; then
 fi
 
 # Check monitoring (if production compose is running)
-if docker-compose -f compose.yml -f compose.prod.yml ps prometheus 2>/dev/null | grep -q "Up"; then
+if docker compose -f compose.yml -f compose.prod.yml ps prometheus 2>/dev/null | grep -q "Up"; then
     info "Checking monitoring stack..."
     log "Prometheus is running"
     
-    if docker-compose -f compose.yml -f compose.prod.yml ps grafana 2>/dev/null | grep -q "Up"; then
+    if docker compose -f compose.yml -f compose.prod.yml ps grafana 2>/dev/null | grep -q "Up"; then
         log "Grafana is running"
     fi
     
-    if docker-compose -f compose.yml -f compose.prod.yml ps alertmanager 2>/dev/null | grep -q "Up"; then
+    if docker compose -f compose.yml -f compose.prod.yml ps alertmanager 2>/dev/null | grep -q "Up"; then
         log "Alertmanager is running"
     fi
 fi
@@ -223,7 +223,7 @@ create_validation_report() {
   },
   "docker_environment": {
     "docker_version": "$(docker --version 2>/dev/null | cut -d' ' -f3 || echo 'unknown')",
-    "compose_version": "$(docker-compose --version 2>/dev/null | cut -d' ' -f3 || echo 'unknown')"
+    "compose_version": "$(docker compose --version 2>/dev/null | cut -d' ' -f3 || echo 'unknown')"
   },
   "services": {
     "n8n": "$(is_service_running "n8n" && echo "running" || echo "stopped")",

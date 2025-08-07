@@ -69,7 +69,7 @@ check_docker_daemon() {
 
 # Check if Docker Compose is available and functional
 check_docker_compose() {
-    docker-compose version >/dev/null 2>&1
+    docker compose version >/dev/null 2>&1
 }
 
 # Check if a Docker service is running
@@ -87,7 +87,7 @@ check_service_healthy() {
 # Check Docker Compose configuration validity
 check_compose_config() {
     change_to_project_root
-    docker-compose config --quiet >/dev/null 2>&1
+    docker compose config --quiet >/dev/null 2>&1
 }
 
 # ==============================================================================

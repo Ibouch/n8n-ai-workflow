@@ -69,7 +69,7 @@ case "$VALIDATION_COMPONENT" in
         log_info "Running health checks..."
         
         # Run health checks if services are available
-        if docker-compose ps | grep -q "Up"; then
+        if docker compose ps | grep -q "Up"; then
             if ! run_comprehensive_health_check; then
                 validation_success=false
             fi

@@ -4,13 +4,13 @@
 # This file provides the foundational N8N infrastructure setup with core services.
 # 
 # USAGE OPTIONS:
-# 1. Development: docker-compose up -d
-# 2. Production: docker-compose -f compose.yml -f compose.prod.yml up -d
+# 1. Development: docker compose up -d
+# 2. Production: docker compose -f compose.yml -f compose.prod.yml up -d
 # 
 # PRODUCTION NOTES:
 # - Use with compose.prod.yml for full monitoring stack and production optimizations
-# - Shared anchors (x-hardening, x-logging) are duplicated in prod file for Docker Compose compatibility
-# - Environment variables in prod file merge with these base values (do not override)
+# - Production file extends this base configuration with additional services
+# - Environment variables can be customized via .env file
 # 
 # ==============================================================================
 # YAML ANCHORS - Reusable configuration templates
@@ -18,9 +18,9 @@
 
 # Security hardening baseline applied to all containers
 x-hardening: &hardening
-  read_only: true                                    # Immutable root filesystem
+  read_only: true                                   # Immutable root filesystem
   security_opt:
-    - no-new-privileges:true                         # Prevent privilege escalation
+    - no-new-privileges:true                        # Prevent privilege escalation
     - seccomp:./security/seccomp-profile.json       # Restrict system calls
   cap_drop:
     - ALL                                           # Drop all Linux capabilities
@@ -109,12 +109,11 @@ services:
       - /var/run/postgresql:noexec,nosuid,size=100m # PostgreSQL runtime files
       - /dev/shm:size=256m                          # Shared memory for PostgreSQL performance
     environment:
-      - POSTGRES_USER_FILE=/run/secrets/postgres_user    # Read username from Docker secret
+      - POSTGRES_USER=${POSTGRES_USER:-n8n_admin}       # Database username
       - POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password # Read password from Docker secret
-      - POSTGRES_DB=${POSTGRES_DB:-n8n}                  # Database name (default: n8n)
+      - POSTGRES_DB=${POSTGRES_DB:-n8n}                 # Database name (default: n8n)
       - POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256 --auth-local=scram-sha-256 # Strong authentication
     secrets:                                            # Docker secrets for secure credential injection
-      - postgres_user
       - postgres_password
     volumes:
       - postgres_data:/var/lib/postgresql/data          # Persistent database storage
@@ -123,7 +122,7 @@ services:
       - n8n-backend                                     # Internal network, no external access
     healthcheck:                                        # Monitor database availability
       test: >
-        CMD-SHELL pg_isready -U $(cat /run/secrets/postgres_user) -d ${POSTGRES_DB:-n8n}
+        CMD-SHELL pg_isready -U ${POSTGRES_USER:-n8n_admin} -d ${POSTGRES_DB:-n8n}
       interval: 30s
       timeout: 10s
       retries: 5
@@ -159,13 +158,13 @@ services:
       - DB_POSTGRESDB_HOST=postgres                    # Database service hostname
       - DB_POSTGRESDB_PORT=5432                        # Standard PostgreSQL port
       - DB_POSTGRESDB_DATABASE=${POSTGRES_DB:-n8n}     # Database name
-      - DB_POSTGRESDB_USER_FILE=/run/secrets/postgres_user # Username from Docker secret
+      - DB_POSTGRESDB_USER=${POSTGRES_USER:-n8n_admin}    # Database connection username
       - DB_POSTGRESDB_PASSWORD_FILE=/run/secrets/postgres_password # Password from Docker secret
       - DB_POSTGRESDB_SSL_ENABLED=false               # SSL disabled for internal network
       
       # Authentication and access control
       - N8N_BASIC_AUTH_ACTIVE=${N8N_BASIC_AUTH_ACTIVE:-true} # Enable basic authentication
-      - N8N_BASIC_AUTH_USER_FILE=/run/secrets/n8n_user    # Admin username from secret
+      - N8N_BASIC_AUTH_USER=${N8N_ADMIN_USER:-admin}      # Web interface admin username
       - N8N_BASIC_AUTH_PASSWORD_FILE=/run/secrets/n8n_password # Admin password from secret
       - N8N_HOST=${N8N_HOST:-localhost}                # Public hostname for N8N
       - N8N_PORT=5678                                  # Internal service port
@@ -207,9 +206,7 @@ services:
       - GENERIC_TIMEZONE=${GENERIC_TIMEZONE:-UTC}      # Server timezone
       - TZ=${GENERIC_TIMEZONE:-UTC}                    # System timezone
     secrets:
-      - postgres_user
       - postgres_password
-      - n8n_user
       - n8n_password
       - n8n_encryption_key
       - smtp_password
@@ -379,14 +376,10 @@ volumes:
 # ==============================================================================
 secrets:
   # PostgreSQL authentication
-  postgres_user:
-    file: ./secrets/postgres_user.txt                  # Database username
   postgres_password:
     file: ./secrets/postgres_password.txt              # Database password
   
   # N8N authentication and encryption
-  n8n_user:
-    file: ./secrets/n8n_user.txt
   n8n_password:
     file: ./secrets/n8n_password.txt
   n8n_encryption_key:

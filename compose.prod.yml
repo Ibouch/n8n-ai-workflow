@@ -5,24 +5,18 @@
 # 
 # USAGE REQUIREMENTS:
 # - This file MUST be used with the base compose.yml file
-# - Command: docker-compose -f compose.yml -f compose.prod.yml up -d
+# - Command: docker compose -f compose.yml -f compose.prod.yml up -d
 # - Order matters: base file first, then production overrides
 # 
 # MAINTENANCE NOTES:
-# - Shared anchors (x-hardening, x-logging) must be kept identical to compose.yml
-# - Environment variables use map format to merge with base (not override)
-# - Secrets section is complete and independent of base file
-# - Any changes to shared components must be applied to both files
+# - Shared anchors must be kept identical to compose.yml
+# - Complete monitoring stack with production-grade resource limits
+# - Independent secrets section for standalone deployment capability
 
 # ==============================================================================
 # PRODUCTION ENVIRONMENT ANCHORS
 # ==============================================================================
-# WARNING: Due to Docker Compose file separation, shared anchors must be duplicated.
-# The following anchors MUST be kept identical to those in compose.yml:
-# - x-hardening, x-logging
-# Any changes to these anchors must be applied to both files simultaneously.
-
-# SHARED ANCHORS (must match compose.yml exactly)
+# Shared configuration anchors for production environment
 x-hardening: &hardening
   read_only: true                                    # Immutable root filesystem
   security_opt:
@@ -37,7 +31,7 @@ x-logging: &logging
     max-size: "10m"                                 # Rotate at 10MB
     max-file: "3"                                   # Keep 3 historical files
 
-# PRODUCTION-SPECIFIC ANCHORS (only used in this file)
+# Production resource allocation templates
 # Resource templates for monitoring services
 x-monitoring-small-resources: &monitoring-small-resources  # Lightweight monitoring tools
   limits:
@@ -67,8 +61,7 @@ services:
   # PostgreSQL production tuning and monitoring
   postgres:
     environment:
-      # Production-specific environment variables (merged with base)
-      # Base variables preserved: POSTGRES_USER_FILE, POSTGRES_PASSWORD_FILE, POSTGRES_DB
+      # Production database configuration
       POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256 --data-checksums"
     command: >
       postgres
@@ -107,9 +100,7 @@ services:
   # N8N production performance and data management
   n8n:
     environment:
-      # Production-specific environment variables (merged with base)
-      # Base variables preserved: DB_*, N8N_BASIC_AUTH_*, N8N_HOST, N8N_PORT, etc.
-      # Runtime optimizations
+      # Production runtime optimization
       NODE_ENV: "production"                             # Enable production mode
       NODE_OPTIONS: "--max-old-space-size=3072"         # Increase heap size to 3GB
       
@@ -205,14 +196,13 @@ services:
       - /tmp:noexec,nosuid,size=100m
       - /var/lib/grafana/plugins:noexec,nosuid,size=100m
     environment:
-      - GF_SECURITY_ADMIN_USER_FILE=/run/secrets/grafana_user
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin} # Dashboard admin username
       - GF_SECURITY_ADMIN_PASSWORD_FILE=/run/secrets/grafana_password
       - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-piechart-panel
       - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-http://localhost:3000}
       - GF_ANALYTICS_REPORTING_ENABLED=false
       - GF_ANALYTICS_CHECK_FOR_UPDATES=false
     secrets:
-      - grafana_user
       - grafana_password
     volumes:
       - grafana_data:/var/lib/grafana
@@ -330,10 +320,9 @@ services:
     tmpfs: *monitoring-tmpfs
     environment:
       - DATA_SOURCE_URI=postgres:5432/n8n?sslmode=disable
-      - DATA_SOURCE_USER_FILE=/run/secrets/postgres_user
+      - DATA_SOURCE_USER=${POSTGRES_USER:-n8n_admin}       # PostgreSQL metrics connection username
       - DATA_SOURCE_PASS_FILE=/run/secrets/postgres_password
     secrets:
-      - postgres_user
       - postgres_password
     networks:
       - n8n-backend
@@ -448,19 +437,13 @@ secrets:
   # ==============================================================================
   # SECRETS CONFIGURATION
   # ==============================================================================
-  # IMPORTANT: This production file provides a complete secrets definition
-  # and does NOT require the base compose.yml to be present for secrets.
-  # However, both files must use identical secret definitions to ensure consistency.
+  # Complete secrets configuration for production monitoring stack
   
   # PostgreSQL authentication
-  postgres_user:
-    file: ./secrets/postgres_user.txt
   postgres_password:
     file: ./secrets/postgres_password.txt
   
   # N8N authentication and encryption  
-  n8n_user:
-    file: ./secrets/n8n_user.txt
   n8n_password:
     file: ./secrets/n8n_password.txt
   n8n_encryption_key:
@@ -475,7 +458,5 @@ secrets:
     file: ./secrets/smtp_password.txt
   
   # Monitoring stack secrets (production-only)
-  grafana_user:
-    file: ./secrets/grafana_user.txt
   grafana_password:
     file: ./secrets/grafana_password.txt

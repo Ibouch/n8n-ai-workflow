@@ -18,7 +18,7 @@ validate_system_dependencies() {
     # Essential system tools
     local required_commands=(
         "docker"
-        "docker-compose" 
+        "docker compose" 
         "openssl"
         "tar"
         "gzip"
@@ -64,7 +64,7 @@ validate_docker_environment() {
     
     # Check Docker Compose version (minimum 2.0.0)
     local compose_version
-    compose_version=$(docker-compose version --short 2>/dev/null || echo "0.0.0")
+    compose_version=$(docker compose version --short 2>/dev/null || echo "0.0.0")
     
     if ! version_compare "$compose_version" "2.0.0"; then
         warn "Docker Compose version $compose_version is older than recommended (2.0.0+)"
@@ -110,14 +110,14 @@ validate_compose_configuration() {
     done
     
     # Validate compose configuration syntax
-    if ! docker-compose config --quiet 2>/dev/null; then
+    if ! docker compose config --quiet 2>/dev/null; then
         error_exit "Docker Compose configuration validation failed"
     fi
     
     # Check for required services
     local required_services=("postgres" "n8n" "nginx" "redis")
     for service in "${required_services[@]}"; do
-        if ! docker-compose config --services | grep -q "^${service}$"; then
+        if ! docker compose config --services | grep -q "^${service}$"; then
             error_exit "Required service '$service' not found in compose configuration"
         fi
     done
@@ -271,7 +271,7 @@ validate_network_configuration() {
     
     # Check if required networks exist in compose
     local networks
-    networks=$(docker-compose config --format json | jq -r '.networks | keys[]' 2>/dev/null || echo "")
+    networks=$(docker compose config --format json | jq -r '.networks | keys[]' 2>/dev/null || echo "")
     
     if ! echo "$networks" | grep -q "n8n-backend"; then
         error_exit "Required network 'n8n-backend' not found in compose configuration"
@@ -287,7 +287,7 @@ validate_network_configuration() {
     
     for port in "${used_ports[@]}"; do
         if ss -tuln | grep -q ":$port "; then
-            if ! docker-compose ps | grep -q ":$port->"; then
+            if ! docker compose ps | grep -q ":$port->"; then
                 conflicting_ports+=("$port")
             fi
         fi
@@ -505,7 +505,7 @@ create_validation_report() {
   "validation_status": "$validation_status",
   "system_info": {
     "docker_version": "$(docker version --format '{{.Server.Version}}' 2>/dev/null || echo 'unknown')",
-    "compose_version": "$(docker-compose version --short 2>/dev/null || echo 'unknown')",
+    "compose_version": "$(docker compose version --short 2>/dev/null || echo 'unknown')",
     "total_memory_gb": $(grep MemTotal /proc/meminfo | awk '{print int($2/1024/1024)}'),
     "cpu_cores": $(nproc),
     "available_disk_gb": $(df -BG "$PROJECT_ROOT" | awk 'NR==2 {print int($4)}' | sed 's/G//')

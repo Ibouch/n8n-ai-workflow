@@ -156,7 +156,7 @@ backup_postgresql() {
         
         if docker run --rm \
             --name "n8n-backup-postgres-$(get_timestamp)" \
-            --network "$(docker-compose config | grep 'name:' | grep backend | awk '{print $2}')" \
+            --network "$(docker compose config | grep 'name:' | grep backend | awk '{print $2}')" \
             --user 70:70 \
             --read-only \
             --security-opt no-new-privileges:true \
@@ -237,7 +237,7 @@ backup_redis() {
         
         if docker run --rm \
             --name "n8n-backup-redis-$(get_timestamp)" \
-            --network "$(docker-compose config | grep 'name:' | grep backend | awk '{print $2}')" \
+            --network "$(docker compose config | grep 'name:' | grep backend | awk '{print $2}')" \
             --user 999:999 \
             --read-only \
             --security-opt no-new-privileges:true \

@@ -180,7 +180,7 @@ change_to_project_root() {
 get_container_id() {
     local service="$1"
     change_to_project_root
-    docker-compose ps -q "$service" 2>/dev/null | head -1
+    docker compose ps -q "$service" 2>/dev/null | head -1
 }
 
 # Get container ID with validation
@@ -211,7 +211,7 @@ get_container_name() {
 is_service_running() {
     local service="$1"
     change_to_project_root
-    docker-compose ps "$service" 2>/dev/null | grep -q "Up"
+    docker compose ps "$service" 2>/dev/null | grep -q "Up"
 }
 
 # Wait for service to be healthy
@@ -265,13 +265,13 @@ docker_exec_safe() {
     fi
     
     change_to_project_root
-    docker-compose exec -T "$service" "${command[@]}"
+    docker compose exec -T "$service" "${command[@]}"
 }
 
 # Validate Docker Compose configuration
 validate_compose_config() {
     change_to_project_root
-    if ! docker-compose config --quiet 2>/dev/null; then
+    if ! docker compose config --quiet 2>/dev/null; then
         error_exit "Docker Compose configuration is invalid"
     fi
     log_success "Docker Compose configuration is valid"
@@ -357,7 +357,7 @@ get_system_info() {
     echo "  OS: $(uname -s) $(uname -r)"
     echo "  Architecture: $(uname -m)"
     echo "  Docker: $(docker --version 2>/dev/null || echo 'Not installed')"
-    echo "  Docker Compose: $(docker-compose --version 2>/dev/null || echo 'Not installed')"
+    echo "  Docker Compose: $(docker compose --version 2>/dev/null || echo 'Not installed')"
     echo "  User: $(whoami) (UID: $(id -u))"
     echo "  Working Directory: $(pwd)"
     echo "  Project Root: $PROJECT_ROOT"
@@ -493,7 +493,7 @@ init_common() {
     local skip_secrets_validation="${1:-false}"
     
     # Validate basic requirements
-    require_commands "docker" "docker-compose"
+    require_commands "docker" "docker compose"
     validate_project_structure "$skip_secrets_validation"
     
     # Set up signal handlers for cleanup

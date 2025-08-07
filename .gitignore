@@ -43,7 +43,7 @@ Thumbs.db
 *~
 
 # Docker override files for local development
-docker-compose.override.yml
+docker compose.override.yml
 
 # Temporary files
 *.tmp

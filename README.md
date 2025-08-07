@@ -31,7 +31,7 @@ cp env.example .env
 # Edit: N8N_HOST, N8N_PROTOCOL, WEBHOOK_URL
 
 # 5. Deploy with production monitoring
-docker-compose -f compose.yml -f compose.prod.yml up -d
+docker compose -f compose.yml -f compose.prod.yml up -d
 
 # 6. Setup security hardening (requires root access)
 sudo ./scripts/setup-security.sh
@@ -40,6 +40,23 @@ sudo ./scripts/network-security.sh
 
 # 7. Verify deployment health
 ./scripts/health-check.sh
+```
+
+### Permission Notes
+
+The scripts now handle permission issues gracefully:
+- **Automatic fallback**: If project directories aren't writable, scripts use user home or temp directories for logs
+- **Smart directory creation**: Secrets generation creates required directories automatically
+- **No sudo required**: Most scripts run fine as regular user (except security hardening)
+
+If you encounter permission issues:
+```bash
+# Option 1: Fix project ownership (recommended)
+sudo chown -R $USER:$USER /path/to/project
+
+# Option 2: Run with sudo (fallback)
+sudo ./scripts/generate-secrets.sh
+sudo ./scripts/validate-infrastructure.sh
 ```
 
 ## ⚙️ Configuration
@@ -52,9 +69,9 @@ N8N_PROTOCOL=https
 WEBHOOK_URL=https://your-domain.com/
 
 # SMTP Configuration
-SMTP_HOST=smtp-mail.outlook.com
+SMTP_HOST=smtp-mail.your-domain.com
 SMTP_PORT=587
-SMTP_USERNAME=your-email@outlook.com
+SMTP_USERNAME=your-email@your-domain.com
 ALERT_EMAIL_TO=admin@your-domain.com
 ```
 
@@ -124,10 +141,10 @@ journalctl -f | grep apparmor
 
 ```bash
 # 1. Deploy with monitoring stack
-docker-compose -f compose.yml -f compose.prod.yml up -d
+docker compose -f compose.yml -f compose.prod.yml up -d
 
 # 2. Verify monitoring services
-docker-compose ps | grep -E "(prometheus|grafana|loki|alertmanager)"
+docker compose ps | grep -E "(prometheus|grafana|loki|alertmanager)"
 
 # 3. Access Grafana (credentials in secrets/grafana_*)
 open http://localhost:3000
@@ -163,8 +180,8 @@ vim monitoring/prometheus/alerts.yml
 vim monitoring/alertmanager/alertmanager.yml
 
 # Reload configuration (no restart needed)
-docker-compose exec prometheus kill -HUP 1
-docker-compose exec alertmanager kill -HUP 1
+docker compose exec prometheus kill -HUP 1
+docker compose exec alertmanager kill -HUP 1
 ```
 
 ## 🛠️ Management Commands
@@ -199,18 +216,20 @@ docker-compose exec alertmanager kill -HUP 1
 
 ```
 secrets/
-├── postgres_user.txt         # Database username
-├── postgres_password.txt     # Database password (32 chars)
-├── n8n_user.txt             # N8N admin username
+├── postgres_password.txt    # Database password (32 chars)
 ├── n8n_password.txt         # N8N admin password (24 chars)
 ├── n8n_encryption_key.txt   # N8N data encryption key (64 chars)
 ├── redis_password.txt       # Redis authentication (24 chars)
-├── grafana_user.txt         # Grafana admin username
 ├── grafana_password.txt     # Grafana admin password (24 chars)
 ├── smtp_password.txt        # Email service password (24 chars)
 ├── age-key.txt              # Backup encryption private key
 └── age-recipients.txt       # Backup encryption public key
 ```
+
+**Note**: Usernames are configured via environment variables in `.env`:
+- `POSTGRES_USER` - Database username (default: n8n_admin)
+- `N8N_ADMIN_USER` - N8N admin username (default: admin)  
+- `GRAFANA_ADMIN_USER` - Grafana admin username (default: admin)
 
 ### Secret Rotation Process
 
@@ -226,7 +245,7 @@ chmod 600 secrets/n8n_password.txt
 ./scripts/validate-infrastructure.sh secrets
 
 # 4. Apply new secrets (rolling restart)
-docker-compose up -d --force-recreate
+docker compose up -d --force-recreate
 
 # 5. Verify services with new secrets
 ./scripts/health-check.sh
@@ -270,11 +289,11 @@ The backup system creates encrypted archives containing:
 backups/
 ├── 20240101_120000/           # Timestamp-based directories
 │   ├── postgresql.sql.age     # Encrypted database dump
-│   ├── n8n_data.tar.age      # Encrypted N8N data
-│   ├── redis_data.tar.age    # Encrypted Redis data
-│   ├── config.tar.age        # Encrypted configuration
-│   ├── backup_metadata.json  # Backup information
-│   └── checksums.sha256      # File integrity checksums
+│   ├── n8n_data.tar.age       # Encrypted N8N data
+│   ├── redis_data.tar.age     # Encrypted Redis data
+│   ├── config.tar.age         # Encrypted configuration
+│   ├── backup_metadata.json   # Backup information
+│   └── checksums.sha256       # File integrity checksums
 └── latest -> 20240101_120000/ # Symlink to latest backup
 ```
 
@@ -282,14 +301,14 @@ backups/
 
 ```bash
 # 1. Stop all services
-docker-compose down
+docker compose down
 
 # 2. Navigate to backup directory
 cd backups/latest  # or specific timestamp directory
 
 # 3. Decrypt and restore database
 age -d -i ../../secrets/age-key.txt postgresql.sql.age | \
-  docker-compose exec -T postgres psql -U postgres -d n8n
+  docker compose exec -T postgres psql -U postgres -d n8n
 
 # 4. Decrypt and restore N8N data
 age -d -i ../../secrets/age-key.txt n8n_data.tar.age | \
@@ -300,7 +319,7 @@ age -d -i ../../secrets/age-key.txt redis_data.tar.age | \
   tar -xf - -C ../../volumes/redis/
 
 # 6. Restart services and verify
-docker-compose up -d
+docker compose up -d
 ./scripts/health-check.sh
 ```
 
@@ -325,7 +344,7 @@ cat backups/latest/backup_metadata.json | jq .
 **Service issues:**
 ```bash
 ./scripts/health-check.sh              # Check all services
-docker-compose logs servicename        # View specific logs
+docker compose logs servicename        # View specific logs
 ```
 
 **Permission issues:**
