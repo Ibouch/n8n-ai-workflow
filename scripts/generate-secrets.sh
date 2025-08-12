@@ -89,12 +89,76 @@ else
     warn "age encryption tool not found. Install 'age' for backup encryption support."
 fi
 
+# Create SSL directory and generate dhparam.pem for nginx
+SSL_DIR="${PROJECT_ROOT}/nginx/ssl"
+create_dir_safe "${SSL_DIR}" 755
+
+if [ ! -f "${SSL_DIR}/dhparam.pem" ] || [ "$FORCE_REGENERATE" = true ]; then
+    log_info "Generating secure Diffie-Hellman parameters (this may take a few minutes)..."
+    
+    # Generate 2048-bit DH parameters (secure and reasonable generation time)
+    if openssl dhparam -out "${SSL_DIR}/dhparam.pem" 2048 2>/dev/null; then
+        chmod 644 "${SSL_DIR}/dhparam.pem"
+        log_success "Generated Diffie-Hellman parameters (dhparam.pem)"
+    else
+        warn "Failed to generate Diffie-Hellman parameters. OpenSSL may not be available."
+    fi
+else
+    log_info "Diffie-Hellman parameters already exist"
+fi
+
+# Create placeholder for SSL certificates with instructions
+if [ ! -f "${SSL_DIR}/README.md" ] || [ "$FORCE_REGENERATE" = true ]; then
+    cat > "${SSL_DIR}/README.md" << 'EOF'
+# SSL Certificate Setup
+
+This directory should contain your SSL certificates for HTTPS access.
+
+## Required Files
+
+- `fullchain.pem` - Certificate chain (certificate + intermediate certificates)
+- `key.pem` - Private key
+- `dhparam.pem` - Diffie-Hellman parameters (automatically generated)
+
+## Certificate Sources
+
+### Let's Encrypt (Recommended)
+```bash
+# Install certbot
+sudo apt install certbot
+
+# Generate certificate
+sudo certbot certonly --standalone -d yourdomain.com
+
+# Copy certificates
+sudo cp /etc/letsencrypt/live/yourdomain.com/fullchain.pem nginx/ssl/
+sudo cp /etc/letsencrypt/live/yourdomain.com/privkey.pem nginx/ssl/key.pem
+sudo chown $USER:$USER nginx/ssl/*.pem
+```
+
+### Self-Signed (Development Only)
+```bash
+# Generate self-signed certificate (valid for 365 days)
+openssl req -x509 -newkey rsa:4096 -keyout nginx/ssl/key.pem -out nginx/ssl/fullchain.pem -days 365 -nodes -subj "/CN=localhost"
+```
+
+## Security Notes
+
+- Keep private keys secure (600 permissions)
+- Use strong certificates (RSA 2048+ or ECDSA)
+- Regularly renew certificates before expiration
+- Monitor certificate expiration with health checks
+EOF
+    log_success "Created SSL setup instructions"
+fi
+
 # Set proper permissions (portable across GNU/BSD)
 find "${SECRETS_DIR}" -type f -name "*.txt" -exec chmod 600 {} +
 chmod 700 "${SECRETS_DIR}"
 
 log_success "Secrets generation completed!"
-log_info "Location: ${SECRETS_DIR}"
+log_info "Secrets location: ${SECRETS_DIR}"
+log_info "SSL directory: ${SSL_DIR}"
 
 # Display summary
 echo ""
@@ -107,13 +171,34 @@ for file in "${SECRETS_DIR}"/*.txt; do
 done
 
 echo ""
+echo "SSL setup:"
+if [ -f "${SSL_DIR}/dhparam.pem" ]; then
+    echo "  ${CHECKMARK} dhparam.pem (Diffie-Hellman parameters)"
+else
+    echo "  ${CROSS} dhparam.pem (generation failed)"
+fi
+
+if [ -f "${SSL_DIR}/README.md" ]; then
+    echo "  ${CHECKMARK} README.md (SSL setup instructions)"
+fi
+
+# Check for actual SSL certificates
+if [ -f "${SSL_DIR}/fullchain.pem" ] && [ -f "${SSL_DIR}/key.pem" ]; then
+    echo "  ${CHECKMARK} SSL certificates present"
+else
+    echo "  ${WARNING} SSL certificates not found - see ${SSL_DIR}/README.md"
+fi
+
+echo ""
 echo -e "${YELLOW}IMPORTANT SECURITY NOTES:${NC}"
 echo "1. Keep these secrets secure and never commit them to version control"
 echo "2. Use encrypted storage for backups containing these secrets"
 echo "3. Rotate secrets regularly (recommended: every 90 days)"
 echo "4. Use different secrets for different environments"
+echo "5. Generate SSL certificates before starting services (see nginx/ssl/README.md)"
+echo "6. Monitor SSL certificate expiration and renew before expiry"
 if is_age_available; then
-    echo "5. Store the age private key (age-key.txt) in a secure location separate from backups"
+    echo "7. Store the age private key (age-key.txt) in a secure location separate from backups"
 fi
 
 print_script_footer "N8N Secrets Generation"
