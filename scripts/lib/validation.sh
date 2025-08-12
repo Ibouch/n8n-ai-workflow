@@ -366,16 +366,18 @@ validate_security_configuration() {
         fi
     fi
     
-    # Check Docker daemon security configuration
+    # Check Docker daemon security configuration (optional)
     local docker_config="/etc/docker/daemon.json"
     if [ -f "$docker_config" ]; then
         if grep -q '"no-new-privileges": true' "$docker_config"; then
             log_success "Docker daemon has no-new-privileges enabled"
         else
-            warn "Docker daemon no-new-privileges not enabled"
+            log_info "Docker daemon security: Consider enabling no-new-privileges in $docker_config"
+            log_info "  Run: sudo ./scripts/setup-security.sh --docker-daemon"
         fi
     else
-        warn "Docker daemon configuration not found"
+        log_debug "Docker daemon configuration not found (optional for basic operation)"
+        log_debug "  For enhanced security, run: sudo ./scripts/setup-security.sh --docker-daemon"
     fi
     
     log_success "Security configuration validation completed"

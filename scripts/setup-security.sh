@@ -31,7 +31,111 @@ if [ "$EUID" -ne 0 ]; then
     error "This script must be run as root to configure security profiles"
 fi
 
-log "Setting up security profiles for N8N infrastructure..."
+# Parse command line arguments
+SETUP_DOCKER_DAEMON=false
+FULL_SETUP=true
+
+for arg in "$@"; do
+    case $arg in
+        --docker-daemon)
+            SETUP_DOCKER_DAEMON=true
+            FULL_SETUP=false
+            ;;
+        --help|-h)
+            echo "Usage: $0 [OPTIONS]"
+            echo "  --docker-daemon    Setup Docker daemon security configuration only"
+            echo "  --help|-h          Show this help message"
+            exit 0
+            ;;
+    esac
+done
+
+if [ "$SETUP_DOCKER_DAEMON" = "true" ]; then
+    log "Setting up Docker daemon security configuration..."
+else
+    log "Setting up security profiles for N8N infrastructure..."
+fi
+
+# Function to setup Docker daemon security configuration
+setup_docker_daemon_security() {
+    log "Configuring Docker daemon security settings..."
+    
+    local docker_config="/etc/docker/daemon.json"
+    local backup_file="/etc/docker/daemon.json.backup.$(date +%Y%m%d_%H%M%S)"
+    
+    # Create /etc/docker directory if it doesn't exist
+    mkdir -p /etc/docker
+    
+    # Backup existing configuration if it exists
+    if [ -f "$docker_config" ]; then
+        log "Backing up existing Docker daemon configuration to $backup_file"
+        cp "$docker_config" "$backup_file"
+        
+        # Parse existing JSON and add security settings
+        local temp_config="/tmp/daemon.json.tmp"
+        
+        if command -v jq >/dev/null 2>&1; then
+            # Use jq if available for proper JSON merging
+            jq '. + {
+                "no-new-privileges": true,
+                "userns-remap": "default",
+                "log-driver": "json-file",
+                "log-opts": {
+                    "max-size": "10m",
+                    "max-file": "3"
+                },
+                "icc": false,
+                "userland-proxy": false,
+                "experimental": false,
+                "live-restore": true
+            }' "$docker_config" > "$temp_config"
+            mv "$temp_config" "$docker_config"
+        else
+            # Fallback: manual JSON construction
+            warn "jq not available. Creating new daemon.json with security settings."
+            setup_docker_daemon_security_fallback "$docker_config"
+        fi
+    else
+        # Create new configuration file
+        setup_docker_daemon_security_fallback "$docker_config"
+    fi
+    
+    # Set proper permissions
+    chmod 644 "$docker_config"
+    
+    log "Docker daemon security configuration updated"
+    log "Changes will take effect after Docker restart: sudo systemctl restart docker"
+    warn "Restarting Docker will temporarily stop all containers"
+}
+
+# Fallback function to create Docker daemon config without jq
+setup_docker_daemon_security_fallback() {
+    local docker_config="$1"
+    
+    cat > "$docker_config" << 'EOF'
+{
+  "no-new-privileges": true,
+  "userns-remap": "default",
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "10m",
+    "max-file": "3"
+  },
+  "icc": false,
+  "userland-proxy": false,
+  "experimental": false,
+  "live-restore": true
+}
+EOF
+}
+
+# If only Docker daemon setup is requested, do that and exit
+if [ "$SETUP_DOCKER_DAEMON" = "true" ]; then
+    setup_docker_daemon_security
+    log "Docker daemon security setup completed!"
+    log "To apply changes, restart Docker: sudo systemctl restart docker"
+    exit 0
+fi
 
 # 1. Install AppArmor if not present
 if ! command -v apparmor_parser >/dev/null 2>&1; then
@@ -309,6 +413,11 @@ systemctl daemon-reload
 systemctl enable n8n-security-monitor.timer
 systemctl start n8n-security-monitor.timer
 
+# 9. Setup Docker daemon security (for full setup)
+if [ "$FULL_SETUP" = "true" ]; then
+    setup_docker_daemon_security
+fi
+
 log "Security setup completed successfully!"
 log "Security measures implemented:"
 log "  ✅ AppArmor profiles for containers"
@@ -317,6 +426,12 @@ log "  ✅ Audit rules for monitoring"
 log "  ✅ fail2ban protection"
 log "  ✅ Log rotation configuration"
 log "  ✅ Security monitoring automation"
+if [ "$FULL_SETUP" = "true" ]; then
+    log "  ✅ Docker daemon security configuration"
+fi
 
 warn "Please verify that your applications still function correctly after these changes"
 warn "Monitor security logs at: /var/log/n8n-security.log"
+if [ "$FULL_SETUP" = "true" ]; then
+    warn "Restart Docker to apply daemon security changes: sudo systemctl restart docker"
+fi
