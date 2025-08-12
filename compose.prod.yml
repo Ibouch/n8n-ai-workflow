@@ -80,7 +80,7 @@ services:
       -c log_checkpoints=on
     deploy:
       restart_policy:
-        condition: any
+        condition: on-failure
         delay: 10s
         max_attempts: 3
         window: 300s
@@ -109,7 +109,7 @@ services:
       N8N_QUEUE_HEALTH_CHECK_ACTIVE: "true"
     deploy:
       restart_policy:
-        condition: any
+        condition: on-failure
         delay: 15s
         max_attempts: 5
         window: 300s
@@ -145,7 +145,7 @@ services:
         hard: 65536
     deploy:
       restart_policy:
-        condition: any
+        condition: on-failure
         delay: 10s
         max_attempts: 3
         window: 180s
