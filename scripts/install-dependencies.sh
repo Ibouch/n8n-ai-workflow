@@ -8,7 +8,7 @@
 #
 # Required tools for this project:
 #  - docker (daemon + CLI)
-#  - docker compose v2 (docker compose)
+#  - docker compose (docker compose)
 #  - apparmor-utils (Linux security)
 #  - auditd (Linux auditing)
 #  - fail2ban (web protection)
@@ -24,14 +24,6 @@ warn() { printf "\033[1;33m⚠ %s\033[0m\n" "$*"; }
 err() { printf "\033[0;31m✗ %s\033[0m\n" "$*"; }
 
 need_cmd() { command -v "$1" >/dev/null 2>&1; }
-
-require_root_or_sudo() {
-  if [ "${EUID:-$(id -u)}" -ne 0 ]; then
-    if ! need_cmd sudo; then
-      err "This script requires root or 'sudo' available"; exit 1
-    fi
-  fi
-}
 
 apt_install() {
   local pkgs=("$@")
@@ -55,33 +47,58 @@ systemctl_enable_now() {
   fi
 }
 
+clean_old_docker() {
+  bold "Removing old Docker versions"
+  sudo apt-get purge -y docker.io docker-doc docker-compose podman-docker containerd runc || true
+}
+
 install_debian() {
   bold "Detected Debian-based system"
 
-  # Core tooling (network, compression, crypto, JSON)
-  apt_install ca-certificates curl wget openssl tar gzip coreutils findutils jq iproute2 net-tools lsof gnupg
+  clean_old_docker
 
-  # Encryption for backups
-  apt_install age || true
+  # Core tooling
+  apt_install ca-certificates curl wget openssl tar gzip coreutils findutils jq iproute2 net-tools lsof gnupg age apparmor-utils auditd fail2ban
 
-  # Security tooling
-  apt_install apparmor-utils auditd fail2ban || true
+  # Enable security services
   systemctl_enable_now apparmor
   systemctl_enable_now auditd
   systemctl_enable_now fail2ban
 
-  # Docker engine and Compose v2 from distro (simple and stable)
-  apt_install docker.io docker-compose-plugin
-  systemctl_enable_now docker
-
-  # Verify docker compose v2
-  if docker compose version >/dev/null 2>&1; then
-    ok "Docker Compose v2 is available"
-  else
-    warn "Docker Compose v2 not detected; ensure package docker-compose-plugin installed"
+  # Add official Docker repo
+  if ! apt-cache policy docker-ce >/dev/null 2>&1; then
+    bold "Adding Docker official repository"
+    sudo install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL https://download.docker.com/linux/debian/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+    sudo chmod a+r /etc/apt/keyrings/docker.gpg
+    echo \
+      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian \
+      $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+      | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
   fi
 
-  ok "Debian dependencies installed"
+  # Install latest Docker & Compose
+  sudo apt-get update -y
+  sudo apt-get install -y --no-install-recommends docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+  # Enable Docker
+  systemctl_enable_now docker
+
+  # Cleanup unused packages
+  bold "Cleaning up unused packages"
+  sudo apt-get autoremove -y
+  sudo apt-get autoclean -y
+
+  # Verifications
+  need_cmd docker && ok "docker: $(docker --version | cut -d',' -f1)" || warn "docker not found"
+  if docker compose version >/dev/null 2>&1; then
+    ok "compose: $(docker compose version | head -1)"
+  else
+    warn "docker compose not found"
+  fi
+  need_cmd age && ok "age: $(age --version 2>&1 | head -1)" || warn "age not found"
+  need_cmd jq && ok "jq: $(jq --version)" || warn "jq not found"
+  ok "Dependency installation finished"
 }
 
 main() {
@@ -91,21 +108,8 @@ main() {
 
   case "${ID:-}${ID_LIKE:-}" in
     *debian*|*ubuntu*) install_debian ;;
-    *) warn "Unsupported OS detected. Please install dependencies manually: docker, docker-compose v2, age, jq, curl, wget, openssl, tar, gzip, apparmor-utils, auditd, fail2ban" ;;
+    *) warn "Unsupported OS detected. Please install dependencies manually" ;;
   esac
-
-  # Final checks
-  need_cmd docker && ok "docker: $(docker --version | cut -d',' -f1)" || warn "docker not found"
-  if docker compose version >/dev/null 2>&1; then
-    ok "compose: $(docker compose version | head -1)"
-  else
-    warn "docker compose v2 not found"
-  fi
-  need_cmd age && ok "age: $(age --version 2>&1 | head -1)" || warn "age not found"
-  need_cmd jq && ok "jq: $(jq --version)" || warn "jq not found"
-  ok "Dependency installation finished"
 }
 
 main "$@"
-
-
