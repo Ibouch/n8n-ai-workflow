@@ -491,10 +491,12 @@ is_port_available() {
 # Initialize common environment
 init_common() {
     local skip_secrets_validation="${1:-false}"
+    local require_docker="${2:-true}"
     
     # Validate basic requirements
-    # Require Docker;
-    require_commands "docker"
+    if [ "$require_docker" = "true" ]; then
+        require_commands "docker"
+    fi
     validate_project_structure "$skip_secrets_validation"
     
     # Set up signal handlers for cleanup

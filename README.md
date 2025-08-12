@@ -39,18 +39,26 @@ sudo chown $USER:$USER nginx/ssl/*.pem
 # 6. Validate infrastructure before deployment
 ./scripts/validate-infrastructure.sh
 
-# 7. Deploy services with monitoring stack
+# 7. Configure AppArmor (required for hardened Docker runtime)
+sudo ./scripts/setup-apparmor.sh
+
+# If prompted to reboot, run:
+#   sudo reboot
+# After reboot, re-run AppArmor setup:
+#   sudo ./scripts/setup-apparmor.sh
+
+# 8. Deploy services with monitoring stack
 docker compose -f compose.yml -f compose.prod.yml up -d
 
 # Wait for services to initialize (2-3 minutes)
 
-# 8. Verify deployment health and configuration
+# 9. Verify deployment health and configuration
 ./scripts/health-check.sh
 
-# 9. Setup security hardening
+# 10. Setup security hardening
 sudo ./scripts/setup-security.sh
 
-# 10. Final health verification
+# 11. Final health verification
 ./scripts/health-check.sh
 ```
 
@@ -80,6 +88,10 @@ chmod 644 nginx/ssl/fullchain.pem nginx/ssl/dhparam.pem
 # If services fail to start, check logs
 docker compose logs <service-name>
 ```
+
+- If you see: `write /proc/thread-self/attr/apparmor/exec: no such file or directory`
+  - Run: `sudo ./scripts/setup-apparmor.sh`
+  - Reboot if requested, then re-run the script
 
 ## ⚙️ Configuration
 
@@ -144,8 +156,8 @@ sudo chown $USER:$USER nginx/ssl/*.pem
 ### AppArmor Security Profiles
 
 ```bash
-# Load AppArmor profiles (requires root)
-sudo ./scripts/load-apparmor-profiles.sh
+# Setup AppArmor (requires root)
+sudo ./scripts/setup-apparmor.sh
 
 # Verify profiles are loaded and active
 sudo aa-status | grep n8n
@@ -153,6 +165,9 @@ sudo aa-status | grep n8n
 # Monitor AppArmor denials (security violations)
 journalctl -f | grep apparmor
 ```
+
+Notes:
+- AppArmor profiles auto-load on boot via the `apparmor-n8n.service` systemd unit (before Docker starts).
 
 **Profile Coverage**:
 - **n8n_postgres_profile**: Database security constraints
@@ -217,7 +232,7 @@ docker compose exec alertmanager kill -HUP 1
 | **Generate Secrets** | `./scripts/generate-secrets.sh` | Create secrets & SSL directory |
 | **Security Setup** | `sudo ./scripts/setup-security.sh` | Complete security hardening |
 | **Docker Security** | `sudo ./scripts/setup-security.sh --docker-daemon` | Docker daemon security only |
-| **AppArmor** | `sudo ./scripts/load-apparmor-profiles.sh` | Load security profiles |
+| **AppArmor** | `sudo ./scripts/setup-apparmor.sh` | Install, enable, and load AppArmor profiles |
 
 ## 🔐 Secrets Management
 

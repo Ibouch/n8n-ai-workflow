@@ -175,15 +175,152 @@ if docker compose -f compose.yml -f compose.prod.yml ps prometheus 2>/dev/null |
     fi
 fi
 
-# Check AppArmor profiles (if available)
-if command -v aa-status >/dev/null 2>&1; then
-    info "Checking AppArmor profiles..."
-    if aa-status 2>/dev/null | grep -E "(n8n-profile|postgres-profile|nginx-profile)" >/dev/null; then
-        log "AppArmor profiles are loaded"
+# Comprehensive AppArmor security validation
+validate_apparmor_security() {
+    info "Comprehensive AppArmor Security Validation:"
+    
+    local apparmor_checks_passed=0
+    local apparmor_checks_total=8
+    local apparmor_critical_failed=false
+    
+    # Check 1: AppArmor kernel support
+    if grep -q "apparmor" /sys/kernel/security/lsm 2>/dev/null; then
+        log_success "✓ AppArmor kernel support enabled"
+        ((apparmor_checks_passed++))
     else
-        warn "AppArmor profiles not found (run sudo ./scripts/setup-security.sh)"
+        log_error "✗ AppArmor kernel support not available"
+        apparmor_critical_failed=true
     fi
-fi
+    
+    # Check 2: AppArmor service status
+    if systemctl is-active apparmor >/dev/null 2>&1; then
+        log_success "✓ AppArmor service is active"
+        ((apparmor_checks_passed++))
+    else
+        log_error "✗ AppArmor service is not active"
+        apparmor_critical_failed=true
+    fi
+    
+    # Check 3: AppArmor profile interface availability
+    if [ -f /proc/thread-self/attr/apparmor/exec ]; then
+        log_success "✓ AppArmor profile interface available"
+        ((apparmor_checks_passed++))
+    else
+        log_error "✗ AppArmor profile interface not available"
+        echo "    This causes the Docker error: 'write /proc/thread-self/attr/apparmor/exec: no such file or directory'"
+        apparmor_critical_failed=true
+    fi
+    
+    # Check 4: Required AppArmor utilities
+    if command -v aa-status >/dev/null 2>&1 && command -v apparmor_parser >/dev/null 2>&1; then
+        log_success "✓ AppArmor utilities available"
+        ((apparmor_checks_passed++))
+    else
+        log_error "✗ AppArmor utilities missing"
+        apparmor_critical_failed=true
+    fi
+    
+    # Check 5: N8N specific profiles loaded
+    local n8n_profiles=("n8n_app_profile" "n8n_postgres_profile" "n8n_nginx_profile" "n8n_redis_profile")
+    local profiles_loaded=0
+    
+    if command -v aa-status >/dev/null 2>&1; then
+        local aa_output
+        aa_output=$(aa-status 2>/dev/null || echo "")
+        
+        for profile in "${n8n_profiles[@]}"; do
+            if echo "$aa_output" | grep -q "^   $profile"; then
+                ((profiles_loaded++))
+            fi
+        done
+        
+        if [ $profiles_loaded -eq ${#n8n_profiles[@]} ]; then
+            log_success "✓ All N8N AppArmor profiles loaded ($profiles_loaded/${#n8n_profiles[@]})"
+            ((apparmor_checks_passed++))
+        else
+            log_error "✗ N8N AppArmor profiles incomplete ($profiles_loaded/${#n8n_profiles[@]} loaded)"
+        fi
+    else
+        log_error "✗ Cannot check profile status (aa-status unavailable)"
+    fi
+    
+    # Check 6: Container AppArmor configuration
+    local container_profiles_correct=0
+    local containers_with_apparmor=("n8n-postgres" "n8n-app" "n8n-nginx" "n8n-redis")
+    
+    for container in "${containers_with_apparmor[@]}"; do
+        if docker ps --format "{{.Names}}" 2>/dev/null | grep -q "^${container}$"; then
+            local apparmor_profile
+            apparmor_profile=$(docker inspect "$container" --format '{{range .HostConfig.SecurityOpt}}{{if (index . | hasPrefix "apparmor=")}}{{.}}{{end}}{{end}}' 2>/dev/null || echo "")
+            
+            if [ -n "$apparmor_profile" ]; then
+                log "    $container: $apparmor_profile"
+                ((container_profiles_correct++))
+            else
+                warn "    $container: No AppArmor profile configured"
+            fi
+        fi
+    done
+    
+    if [ $container_profiles_correct -gt 0 ]; then
+        log_success "✓ Container AppArmor configuration ($container_profiles_correct containers configured)"
+        ((apparmor_checks_passed++))
+    else
+        log_error "✗ No containers have AppArmor profiles configured"
+    fi
+    
+    # Check 7: AppArmor denial monitoring
+    if journalctl --since "1 hour ago" 2>/dev/null | grep -q "apparmor.*DENIED" 2>/dev/null; then
+        warn "⚠ Recent AppArmor denials detected in logs"
+        echo "    Check with: journalctl --since '1 hour ago' | grep apparmor"
+    else
+        log_success "✓ No recent AppArmor denials"
+        ((apparmor_checks_passed++))
+    fi
+    
+    # Check 8: Production readiness
+    if [ "$apparmor_critical_failed" = false ] && [ $profiles_loaded -eq ${#n8n_profiles[@]} ] && [ $container_profiles_correct -gt 0 ]; then
+        log_success "✓ AppArmor production ready"
+        ((apparmor_checks_passed++))
+    else
+        log_error "✗ AppArmor not production ready"
+    fi
+    
+    # AppArmor summary
+    echo ""
+    echo -e "${BLUE}AppArmor Security Summary:${NC}"
+    echo -e "  Checks passed: ${GREEN}$apparmor_checks_passed${NC}/$apparmor_checks_total"
+    echo -e "  Profiles loaded: ${GREEN}$profiles_loaded${NC}/${#n8n_profiles[@]}"
+    echo -e "  Containers configured: ${GREEN}$container_profiles_correct${NC}/${#containers_with_apparmor[@]}"
+    
+    if [ "$apparmor_critical_failed" = true ]; then
+        echo ""
+        echo -e "${RED}CRITICAL AppArmor Issue Detected:${NC}"
+        echo "This prevents containers from starting with AppArmor profiles."
+        echo ""
+        echo -e "${YELLOW}SOLUTION:${NC}"
+        echo "Run the AppArmor setup script to resolve all issues and load profiles:"
+        echo -e "${CYAN}  sudo ${SCRIPT_DIR}/setup-apparmor.sh${NC}"
+        echo ""
+        
+        # Track as critical failure
+        VALIDATION_FAILED=$((VALIDATION_FAILED + 1))
+        return 1
+    elif [ $apparmor_checks_passed -lt $apparmor_checks_total ]; then
+        echo ""
+        echo -e "${YELLOW}AppArmor configuration needs attention.${NC}"
+        VALIDATION_WARNINGS=$((VALIDATION_WARNINGS + 1))
+        return 1
+    else
+        echo ""
+        echo -e "${GREEN}AppArmor security is properly configured.${NC}"
+        VALIDATION_PASSED=$((VALIDATION_PASSED + 1))
+        return 0
+    fi
+}
+
+# Execute AppArmor validation
+validate_apparmor_security
 
 # Final validation summary
 echo ""

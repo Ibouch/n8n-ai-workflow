@@ -11,8 +11,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh"
 
-# Initialize common environment
-init_common
+# Initialize common environment (no Docker requirement for loader)
+init_common false false
 change_to_project_root
 
 # Require root privileges
@@ -22,15 +22,78 @@ fi
 
 print_script_header "AppArmor Profile Loader" "Loading N8N security profiles into the kernel"
 
-# Check if AppArmor is available
-if ! command -v apparmor_parser >/dev/null 2>&1; then
-    error_exit "AppArmor not found. Install with: apt-get install apparmor-utils"
-fi
+# Comprehensive AppArmor environment validation
+validate_apparmor_environment() {
+    local issues_found=0
+    
+    info "Validating AppArmor environment..."
+    
+    # Check 1: AppArmor utilities available
+    if ! command -v apparmor_parser >/dev/null 2>&1; then
+        log_error "AppArmor parser not found"
+        echo "  Solution: Install AppArmor utilities"
+        echo "    sudo apt-get update && sudo apt-get install apparmor-utils"
+        issues_found=$((issues_found + 1))
+    fi
+    
+    # Check 2: AppArmor kernel module loaded
+    if ! [ -d /sys/module/apparmor ]; then
+        log_error "AppArmor kernel module not loaded"
+        echo "  Solution: Enable AppArmor in kernel and reboot"
+        echo "    sudo ${SCRIPT_DIR}/setup-apparmor.sh"
+        issues_found=$((issues_found + 1))
+    fi
+    
+    # Check 3: AppArmor filesystem interface available
+    if ! [ -f /proc/thread-self/attr/apparmor/exec ]; then
+        log_error "AppArmor profile interface not available"
+        echo "  This is the source of the Docker error you're experiencing"
+        echo "  Solution: Ensure AppArmor is properly configured"
+        echo "    sudo ${SCRIPT_DIR}/setup-apparmor.sh"
+        issues_found=$((issues_found + 1))
+    fi
+    
+    # Check 4: AppArmor service status
+    if ! systemctl is-active apparmor >/dev/null 2>&1; then
+        log_error "AppArmor service not active"
+        echo "  Solution: Start AppArmor service"
+        echo "    sudo systemctl start apparmor"
+        issues_found=$((issues_found + 1))
+    fi
+    
+    # Check 5: AppArmor enabled in kernel command line
+    if ! grep -q "apparmor=1" /proc/cmdline 2>/dev/null; then
+        log_error "AppArmor not enabled in kernel boot parameters"
+        echo "  Solution: Configure kernel parameters and reboot"
+        echo "    sudo ${SCRIPT_DIR}/setup-apparmor.sh"
+        issues_found=$((issues_found + 1))
+    fi
+    
+    if [ "$issues_found" -gt 0 ]; then
+        echo ""
+        echo -e "${RED}=== AppArmor Environment Issues ===${NC}"
+        echo "=================================="
+        echo -e "Issues found: ${RED}$issues_found${NC}"
+        echo ""
+        echo -e "${YELLOW}RECOMMENDED SOLUTION:${NC}"
+        echo "Run the AppArmor setup script to resolve all issues:"
+        echo ""
+        echo -e "${CYAN}  sudo ${SCRIPT_DIR}/setup-apparmor.sh${NC}"
+        echo ""
+        echo "This will:"
+        echo "  • Install required AppArmor packages"
+        echo "  • Configure kernel parameters"
+        echo "  • Enable and start AppArmor service"
+        echo "  • Verify complete functionality"
+        echo ""
+        error_exit "AppArmor environment validation failed ($issues_found issues)"
+    fi
+    
+    log_success "AppArmor environment validation passed"
+}
 
-# Check if AppArmor is enabled
-if ! [ -d /sys/module/apparmor ]; then
-    error_exit "AppArmor module not loaded in kernel"
-fi
+# Call validation function
+validate_apparmor_environment
 
 PROFILES_DIR="${PROJECT_ROOT}/security/apparmor-profiles"
 SYSTEM_PROFILES_DIR="/etc/apparmor.d"
@@ -115,45 +178,7 @@ echo "=============================="
 echo -e "Profiles loaded: ${GREEN}$PROFILES_LOADED${NC}"
 echo -e "Profiles failed: ${RED}$PROFILES_FAILED${NC}"
 
-# Create systemd service for automatic loading
-create_systemd_service() {
-    local service_file="/etc/systemd/system/n8n-apparmor-loader.service"
-    
-    info "Creating systemd service for automatic profile loading..."
-    
-    cat > "$service_file" << 'EOF'
-[Unit]
-Description=Load N8N AppArmor Profiles
-After=apparmor.service
-Wants=apparmor.service
-
-[Service]
-Type=oneshot
-RemainAfterExit=yes
-ExecStart=/bin/bash SCRIPT_PATH/load-apparmor-profiles.sh
-StandardOutput=journal
-StandardError=journal
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-    # Replace the script path placeholder
-    sed -i "s|SCRIPT_PATH|${SCRIPT_DIR}|g" "$service_file"
-    
-    # Enable the service
-    if systemctl enable n8n-apparmor-loader.service >/dev/null 2>&1; then
-        log_success "Systemd service created and enabled"
-        log "Service will automatically load profiles on boot"
-    else
-        warn "Failed to enable systemd service"
-    fi
-}
-
-if [ "$PROFILES_LOADED" -gt 0 ]; then
-    info "Setting up automatic profile loading..."
-    create_systemd_service
-fi
+## Automatic boot-time loading is managed by setup-apparmor.sh
 
 # Overall status
 if [ "$PROFILES_FAILED" -eq 0 ]; then

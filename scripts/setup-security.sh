@@ -5,30 +5,15 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+source "${SCRIPT_DIR}/lib/common.sh"
 
-# Colors
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-NC='\033[0m'
-
-log() {
-    echo -e "${GREEN}[$(date +'%Y-%m-%d %H:%M:%S')]${NC} $1"
-}
-
-warn() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
-
-error() {
-    echo -e "${RED}[ERROR]${NC} $1" >&2
-    exit 1
-}
+# Initialize common environment (no Docker requirement)
+init_common false false
+change_to_project_root
 
 # Check if running as root
 if [ "$EUID" -ne 0 ]; then
-    error "This script must be run as root to configure security profiles"
+    error_exit "This script must be run as root to configure security profiles"
 fi
 
 # Parse command line arguments
@@ -51,14 +36,14 @@ for arg in "$@"; do
 done
 
 if [ "$SETUP_DOCKER_DAEMON" = "true" ]; then
-    log "Setting up Docker daemon security configuration..."
+    log_info "Setting up Docker daemon security configuration..."
 else
-    log "Setting up security profiles for N8N infrastructure..."
+    log_info "Setting up security profiles for N8N infrastructure..."
 fi
 
 # Function to setup Docker daemon security configuration
 setup_docker_daemon_security() {
-    log "Configuring Docker daemon security settings..."
+    log_info "Configuring Docker daemon security settings..."
     
     local docker_config="/etc/docker/daemon.json"
     local backup_file="/etc/docker/daemon.json.backup.$(date +%Y%m%d_%H%M%S)"
@@ -68,7 +53,7 @@ setup_docker_daemon_security() {
     
     # Backup existing configuration if it exists
     if [ -f "$docker_config" ]; then
-        log "Backing up existing Docker daemon configuration to $backup_file"
+        log_info "Backing up existing Docker daemon configuration to $backup_file"
         cp "$docker_config" "$backup_file"
         
         # Parse existing JSON and add security settings
@@ -103,8 +88,8 @@ setup_docker_daemon_security() {
     # Set proper permissions
     chmod 644 "$docker_config"
     
-    log "Docker daemon security configuration updated"
-    log "Changes will take effect after Docker restart: sudo systemctl restart docker"
+    log_info "Docker daemon security configuration updated"
+    log_info "Changes will take effect after Docker restart: sudo systemctl restart docker"
     warn "Restarting Docker will temporarily stop all containers"
 }
 
@@ -132,47 +117,22 @@ EOF
 # If only Docker daemon setup is requested, do that and exit
 if [ "$SETUP_DOCKER_DAEMON" = "true" ]; then
     setup_docker_daemon_security
-    log "Docker daemon security setup completed!"
-    log "To apply changes, restart Docker: sudo systemctl restart docker"
+    log_info "Docker daemon security setup completed!"
+    log_info "To apply changes, restart Docker: sudo systemctl restart docker"
     exit 0
 fi
 
-# 1. Install AppArmor if not present
-if ! command -v apparmor_parser >/dev/null 2>&1; then
-    log "Installing AppArmor..."
-    if command -v apt-get >/dev/null 2>&1; then
-        apt-get update && apt-get install -y apparmor-utils
-    elif command -v yum >/dev/null 2>&1; then
-        yum install -y apparmor-utils
-    else
-        warn "Could not install AppArmor automatically. Please install manually."
-    fi
-fi
-
-# 2. Load AppArmor profiles
-if command -v apparmor_parser >/dev/null 2>&1; then
-    log "Loading AppArmor profiles..."
-    
-    # Copy profiles to system directory
-    cp "${PROJECT_ROOT}/security/apparmor-profiles/"* /etc/apparmor.d/
-    
-    # Load profiles
-    apparmor_parser -r /etc/apparmor.d/n8n-profile
-    apparmor_parser -r /etc/apparmor.d/postgres-profile
-    apparmor_parser -r /etc/apparmor.d/nginx-profile
-    apparmor_parser -r /etc/apparmor.d/redis-profile
-    
-    # Enable AppArmor service
-    systemctl enable apparmor
-    systemctl start apparmor
-    
-    log "AppArmor profiles loaded successfully"
-else
-    warn "AppArmor not available on this system"
+## AppArmor is configured by scripts/setup-apparmor.sh
+log_info "Verifying AppArmor prerequisite..."
+if ! [ -f /proc/thread-self/attr/apparmor/exec ] || ! grep -q "apparmor=1" /proc/cmdline 2>/dev/null; then
+    warn "AppArmor not fully enabled on this host"
+    warn "Run: sudo ${SCRIPT_DIR}/setup-apparmor.sh"
+    warn "Then re-run this script."
+    exit 1
 fi
 
 # 3. Configure additional kernel security parameters
-log "Configuring kernel security parameters..."
+log_info "Configuring kernel security parameters..."
 
 cat > /etc/sysctl.d/99-n8n-security.conf << 'EOF'
 # Network security
@@ -214,7 +174,7 @@ EOF
 sysctl --system
 
 # 4. Configure audit rules
-log "Setting up audit rules..."
+log_info "Setting up audit rules..."
 
 if command -v auditctl >/dev/null 2>&1; then
     cat > /etc/audit/rules.d/n8n-security.rules << 'EOF'
@@ -256,13 +216,13 @@ if command -v auditctl >/dev/null 2>&1; then
 EOF
 
     systemctl restart auditd
-    log "Audit rules configured"
+    log_info "Audit rules configured"
 else
     warn "auditd not available - install audit package for enhanced monitoring"
 fi
 
 # 5. Configure fail2ban for additional protection
-log "Setting up fail2ban..."
+log_info "Setting up fail2ban..."
 
 if command -v fail2ban-client >/dev/null 2>&1; then
     cat > /etc/fail2ban/jail.d/n8n.conf << 'EOF'
@@ -301,13 +261,13 @@ EOF
 
     systemctl enable fail2ban
     systemctl restart fail2ban
-    log "fail2ban configured for nginx protection"
+    log_info "fail2ban configured for nginx protection"
 else
     warn "fail2ban not available - consider installing for additional protection"
 fi
 
 # 6. Set up log rotation for security logs
-log "Configuring log rotation..."
+log_info "Configuring log rotation..."
 
 cat > /etc/logrotate.d/n8n-security << 'EOF'
 /var/log/n8n-security.log {
@@ -334,7 +294,7 @@ cat > /etc/logrotate.d/n8n-security << 'EOF'
 EOF
 
 # 7. Create security monitoring script
-log "Creating security monitoring script..."
+log_info "Creating security monitoring script..."
 
 cat > /usr/local/bin/n8n-security-monitor.sh << 'EOF'
 #!/bin/bash
@@ -418,16 +378,16 @@ if [ "$FULL_SETUP" = "true" ]; then
     setup_docker_daemon_security
 fi
 
-log "Security setup completed successfully!"
-log "Security measures implemented:"
-log "  ✅ AppArmor profiles for containers"
-log "  ✅ Kernel security parameters"
-log "  ✅ Audit rules for monitoring"
-log "  ✅ fail2ban protection"
-log "  ✅ Log rotation configuration"
-log "  ✅ Security monitoring automation"
+log_info "Security setup completed successfully!"
+log_info "Security measures implemented:"
+log_info "  ✅ AppArmor profiles for containers"
+log_info "  ✅ Kernel security parameters"
+log_info "  ✅ Audit rules for monitoring"
+log_info "  ✅ fail2ban protection"
+log_info "  ✅ Log rotation configuration"
+log_info "  ✅ Security monitoring automation"
 if [ "$FULL_SETUP" = "true" ]; then
-    log "  ✅ Docker daemon security configuration"
+    log_info "  ✅ Docker daemon security configuration"
 fi
 
 warn "Please verify that your applications still function correctly after these changes"
