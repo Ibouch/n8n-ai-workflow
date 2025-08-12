@@ -6,64 +6,85 @@
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/Version-1.0.0-brightgreen)](https://github.com/user/repo/releases)
 
-> **Production-ready, security-hardened N8N workflow automation infrastructure** with enterprise-grade security, comprehensive monitoring, and unified management.
+> Production-ready N8N workflow automation with enterprise security, monitoring, and unified management.
 
-## 🚀 Quick Start & Deployment
+## 🚀 Quick Start
 
 ### Prerequisites
 - Docker Engine 20.10+ & Docker Compose 2.0+
-- Linux host (recommended for security features)
+- Linux host (required for security features)
 
 ### Complete Setup Process
 
 ```bash
-# 1. Clone and navigate
+# 1. Clone and navigate to project
 git clone <repository-url> && cd n8n
 
-# 2. Install system dependencies (Debian 12 target)
+# 2. Install system dependencies
 ./scripts/install-dependencies.sh
 
-# 3. Generate secrets (first time only)
+# 3. Generate secrets and SSL directory structure
 ./scripts/generate-secrets.sh
 
-# 4. Configure environment + edit
+# 4. Configure environment variables
 cp env.example .env
+# Edit .env with your domain, SMTP settings, etc.
 
-# 5. Validate system requirements
+# 5. Setup SSL certificates with Let's Encrypt
+sudo certbot certonly --standalone -d yourdomain.com
+sudo cp /etc/letsencrypt/live/yourdomain.com/fullchain.pem nginx/ssl/
+sudo cp /etc/letsencrypt/live/yourdomain.com/privkey.pem nginx/ssl/key.pem
+sudo chown $USER:$USER nginx/ssl/*.pem
+
+# 6. Validate infrastructure before deployment
 ./scripts/validate-infrastructure.sh
 
-# 6. Deploy with production monitoring
+# 7. Deploy services with monitoring stack
 docker compose -f compose.yml -f compose.prod.yml up -d
 
-# 7. Setup security hardening (requires root access)
-sudo ./scripts/setup-security.sh
-sudo ./scripts/load-apparmor-profiles.sh
-sudo ./scripts/network-security.sh
+# Wait for services to initialize (2-3 minutes)
 
-# 8. Verify deployment health
+# 8. Verify deployment health and configuration
+./scripts/health-check.sh
+
+# 9. Setup security hardening
+sudo ./scripts/setup-security.sh
+
+# 10. Final health verification
 ./scripts/health-check.sh
 ```
 
-### Permission Notes
+**Access**: https://your-domain.com (credentials in `secrets/n8n_*`)
 
-The scripts now handle permission issues gracefully:
-- **Automatic fallback**: If project directories aren't writable, scripts use user home or temp directories for logs
-- **Smart directory creation**: Secrets generation creates required directories automatically
-- **No sudo required**: Most scripts run fine as regular user (except security hardening)
+### Important Setup Notes
 
-If you encounter permission issues:
+**🔐 SSL Certificates**
+- **Required for production**: HTTPS access needs valid SSL certificates
+- **Auto-generated dhparam.pem**: The secrets script creates secure DH parameters
+- **Certificate placement**: Must be in `nginx/ssl/` before starting services
+
+**📁 Directory Structure**
+- **Auto-creation**: Scripts create required directories automatically
+- **Permission handling**: Graceful fallback to user home/temp for logs
+- **No sudo needed**: Most scripts run as regular user (except security hardening)
+
+**⚠️ Common Issues**
 ```bash
-# Option 1: Fix project ownership (recommended)
+# Fix project ownership if needed
 sudo chown -R $USER:$USER /path/to/project
 
-# Option 2: Run with sudo (fallback)
-sudo ./scripts/generate-secrets.sh
-sudo ./scripts/validate-infrastructure.sh
+# Ensure correct SSL certificate permissions
+chmod 600 nginx/ssl/key.pem
+chmod 644 nginx/ssl/fullchain.pem nginx/ssl/dhparam.pem
+
+# If services fail to start, check logs
+docker compose logs <service-name>
 ```
 
 ## ⚙️ Configuration
 
-### Environment Setup (.env)
+### Environment Variables (.env)
+
 ```bash
 # Domain & Protocol
 N8N_HOST=your-domain.com
@@ -75,25 +96,44 @@ SMTP_HOST=smtp-mail.your-domain.com
 SMTP_PORT=587
 SMTP_USERNAME=your-email@your-domain.com
 ALERT_EMAIL_TO=admin@your-domain.com
+
+# Service Credentials (usernames only - passwords in secrets/)
+POSTGRES_USER=n8n_admin
+N8N_ADMIN_USER=admin
+GRAFANA_ADMIN_USER=admin
 ```
 
 ### SSL Certificates
+
 ```bash
-# Place certificates in nginx/ssl/
+# SSL directory structure (created by generate-secrets.sh)
 nginx/ssl/
-├── fullchain.pem     # Certificate chain
-├── key.pem           # Private key
-└── dhparam.pem       # DH parameters
+├── fullchain.pem     # Certificate chain (from Let's Encrypt)
+├── key.pem           # Private key (from Let's Encrypt)
+├── dhparam.pem       # Auto-generated secure DH parameters
+└── README.md         # Auto-generated setup instructions
 ```
 
-**🎯 Access**: https://localhost (credentials in `secrets/n8n_*`)
+**Certificate Setup with Let's Encrypt:**
+```bash
+# Initial certificate generation
+sudo certbot certonly --standalone -d yourdomain.com
 
-## 🔒 Security Features
+# Copy to project directory
+sudo cp /etc/letsencrypt/live/yourdomain.com/fullchain.pem nginx/ssl/
+sudo cp /etc/letsencrypt/live/yourdomain.com/privkey.pem nginx/ssl/key.pem
+sudo chown $USER:$USER nginx/ssl/*.pem
 
-**Defense-in-depth architecture** with comprehensive threat mitigation:
+# Setup auto-renewal (crontab)
+0 3 * * * certbot renew --quiet --post-hook "docker compose restart nginx"
+```
 
-| **Security Layer** | **Implementation** |
-|-------------------|-------------------|
+## 🔒 Security
+
+### Architecture
+
+| **Layer** | **Implementation** |
+|-----------|-------------------|
 | **Container Hardening** | Non-root execution, read-only filesystems, seccomp profiles |
 | **AppArmor Profiles** | Custom mandatory access control for all services |
 | **Network Segmentation** | DMZ (172.20.0.0/24) ↔ Internal (172.21.0.0/24) isolation |
@@ -103,10 +143,8 @@ nginx/ssl/
 
 ### AppArmor Security Profiles
 
-**Mandatory Access Control (MAC)** enforcement with custom AppArmor profiles:
-
 ```bash
-# Load AppArmor profiles (requires root access)
+# Load AppArmor profiles (requires root)
 sudo ./scripts/load-apparmor-profiles.sh
 
 # Verify profiles are loaded and active
@@ -122,17 +160,10 @@ journalctl -f | grep apparmor
 - **n8n_nginx_profile**: Web server access controls
 - **n8n_redis_profile**: Cache service limitations
 
-**Features**:
-- Automatic profile loading at system boot (systemd integration)
-- Syntax validation before kernel loading
-- Comprehensive file system and capability restrictions
-- Network access controls aligned with service requirements
-
 ## 📊 Monitoring & Observability
 
 ### Monitoring Stack Components
 
-**Production monitoring stack** (localhost access only):
 - **Grafana**: http://localhost:3000 - Dashboards and alerting
 - **Prometheus**: http://localhost:9090 - Metrics collection  
 - **Alertmanager**: http://localhost:9093 - Alert routing
@@ -151,40 +182,29 @@ docker compose ps | grep -E "(prometheus|grafana|loki|alertmanager)"
 # 3. Access Grafana (credentials in secrets/grafana_*)
 open http://localhost:3000
 
-# 4. Import N8N dashboards (optional)
+# 4. Import production dashboards
 # - Container metrics dashboard ID: 893
 # - PostgreSQL dashboard ID: 9628
 # - Redis dashboard ID: 763
 ```
 
-### Monitoring Configuration
+### Custom Alerts Configuration
 
-**Prometheus Targets**:
-- N8N application metrics: `n8n:5678/metrics`
-- PostgreSQL metrics: `postgres-exporter:9187`
-- Redis metrics: `redis-exporter:9121`
-- System metrics: `node-exporter:9100`
-- Container metrics: `cadvisor:8080`
+```bash
+# Edit alert rules
+vim monitoring/prometheus/alerts.yml
+vim monitoring/alertmanager/alertmanager.yml
+
+# Reload configuration without restart
+docker compose exec prometheus kill -HUP 1
+docker compose exec alertmanager kill -HUP 1
+```
 
 **Alert Rules**:
 - Service health checks (1-minute intervals)
 - Resource utilization warnings (>80% threshold)
 - Security events (failed logins, unusual traffic)
 - Application performance (response times, errors)
-
-### Custom Alerts Setup
-
-```bash
-# Edit alert rules
-vim monitoring/prometheus/alerts.yml
-
-# Add custom alert rules
-vim monitoring/alertmanager/alertmanager.yml
-
-# Reload configuration (no restart needed)
-docker compose exec prometheus kill -HUP 1
-docker compose exec alertmanager kill -HUP 1
-```
 
 ## 🛠️ Management Commands
 
@@ -194,79 +214,67 @@ docker compose exec alertmanager kill -HUP 1
 | **Backup** | `./scripts/backup.sh` | Encrypted backups with verification |
 | **Update** | `./scripts/update.sh` | Safe updates with rollback |
 | **Validate** | `./scripts/validate-infrastructure.sh` | System validation |
-| **Security** | `sudo ./scripts/setup-security.sh` | AppArmor profiles & audit rules |
-| **AppArmor** | `sudo ./scripts/load-apparmor-profiles.sh` | Load security profiles into kernel |
+| **Generate Secrets** | `./scripts/generate-secrets.sh` | Create secrets & SSL directory |
+| **Security Setup** | `sudo ./scripts/setup-security.sh` | Complete security hardening |
+| **Docker Security** | `sudo ./scripts/setup-security.sh --docker-daemon` | Docker daemon security only |
+| **AppArmor** | `sudo ./scripts/load-apparmor-profiles.sh` | Load security profiles |
 
 ## 🔐 Secrets Management
 
-### Secret Generation and Setup
+### Secret Generation
 
 ```bash
-# Generate all required secrets (first time setup)
+# Generate all required secrets and SSL directory
 ./scripts/generate-secrets.sh
 
 # Force regenerate all secrets (security rotation)
 ./scripts/generate-secrets.sh --force
 
-# Validate all secrets are properly configured
+# Validate secrets configuration
 ./scripts/validate-infrastructure.sh secrets
 ```
 
-**🔧 Permission Handling**: Scripts automatically handle permission issues by creating fallback directories when project paths aren't writable. No sudo required for secret generation.
-
-### Required Secrets Structure
+### Generated Structure
 
 ```
-secrets/
+secrets/                     # Auto-created with 700 permissions
 ├── postgres_password.txt    # Database password (32 chars)
 ├── n8n_password.txt         # N8N admin password (24 chars)
-├── n8n_encryption_key.txt   # N8N data encryption key (64 chars)
-├── redis_password.txt       # Redis authentication (24 chars)
+├── n8n_encryption_key.txt   # N8N data encryption key (32 chars)
+├── redis_password.txt       # Redis authentication (32 chars)
 ├── grafana_password.txt     # Grafana admin password (24 chars)
 ├── smtp_password.txt        # Email service password (24 chars)
 ├── age-key.txt              # Backup encryption private key
 └── age-recipients.txt       # Backup encryption public key
 ```
 
-**Note**: Usernames are configured via environment variables in `.env`:
-- `POSTGRES_USER` - Database username (default: n8n_admin)
-- `N8N_ADMIN_USER` - N8N admin username (default: admin)  
-- `GRAFANA_ADMIN_USER` - Grafana admin username (default: admin)
-
 ### Secret Rotation Process
 
 ```bash
-# 1. Generate new secrets (keeps existing if present)
+# 1. Generate new secrets
 ./scripts/generate-secrets.sh
 
-# 2. Update specific secrets manually (optional)
-echo "new_strong_password_here" > secrets/n8n_password.txt
-chmod 600 secrets/n8n_password.txt
-
-# 3. Validate secret strength and permissions
+# 2. Validate secret strength and permissions
 ./scripts/validate-infrastructure.sh secrets
 
-# 4. Apply new secrets (rolling restart)
+# 3. Apply new secrets (rolling restart)
 docker compose up -d --force-recreate
 
-# 5. Verify services with new secrets
+# 4. Verify services with new secrets
 ./scripts/health-check.sh
 ```
 
-### Secret Security Best Practices
-
-- **Permissions**: All secret files must have `600` permissions (owner read/write only)
-- **Directory**: Secrets directory must have `700` permissions
-- **Encryption**: Backup secrets are encrypted with age keys
-- **Rotation**: Regular rotation recommended (quarterly for production)
-- **Validation**: Use validation scripts to ensure proper configuration
+**Security Best Practices**:
+- All secret files must have `600` permissions
+- Secrets directory must have `700` permissions
+- Regular rotation recommended (quarterly for production)
 
 ## 🔄 Backup & Recovery
 
 ### Automated Backup System
 
 ```bash
-# Manual backup (creates encrypted archive)
+# Manual backup
 ./scripts/backup.sh
 
 # Automated daily backup (add to crontab)
@@ -278,14 +286,13 @@ RETENTION_DAYS=30 ./scripts/backup.sh
 
 ### Backup Components
 
-The backup system creates encrypted archives containing:
 - **PostgreSQL database**: Full database dump with schema
 - **N8N data**: Workflows, credentials, and settings  
 - **Redis data**: Cache and queue state
 - **Configuration files**: Docker Compose, nginx, monitoring configs
 - **Secrets**: Encrypted secret files (with separate key)
 
-### Backup Location and Structure
+### Backup Structure
 
 ```
 backups/
@@ -306,7 +313,7 @@ backups/
 docker compose down
 
 # 2. Navigate to backup directory
-cd backups/latest  # or specific timestamp directory
+cd backups/latest
 
 # 3. Decrypt and restore database
 age -d -i ../../secrets/age-key.txt postgresql.sql.age | \
@@ -318,7 +325,7 @@ docker compose exec -T n8n sh -c "rm -rf /home/node/.n8n/*"
 docker cp /tmp/n8n_data.tar $(docker compose ps -q n8n):/tmp/n8n_data.tar
 docker compose exec -T n8n sh -c "tar -xf /tmp/n8n_data.tar -C /home/node && rm -f /tmp/n8n_data.tar && chown -R 1000:1000 /home/node/.n8n"
 
-# 5. Decrypt and restore Redis data (optional)
+# 5. Decrypt and restore Redis data
 age -d -i ../../secrets/age-key.txt redis_data.tar.age | \
   tar -xf - -C ../../volumes/redis/
 
@@ -327,14 +334,11 @@ docker compose up -d
 ./scripts/health-check.sh
 ```
 
-### Backup Verification and Testing
+### Backup Verification
 
 ```bash
 # Verify backup integrity
 ./scripts/backup.sh --verify
-
-# Test restore process (dry run)
-./scripts/backup.sh --test-restore
 
 # List available backups
 ls -la backups/
@@ -345,32 +349,50 @@ cat backups/latest/backup_metadata.json | jq .
 
 ## 🔧 Troubleshooting
 
-**Service issues:**
+### Service Issues
+
 ```bash
-./scripts/health-check.sh              # Check all services
-docker compose logs servicename        # View specific logs
+# Check all services
+./scripts/health-check.sh
+
+# View specific logs
+docker compose logs <service-name>
+
+# Validate network configuration
+./scripts/validate-infrastructure.sh network
+docker network inspect n8n-backend
 ```
 
-**Permission issues:**
+### Permission Issues
+
 ```bash
-# Fix project ownership (recommended approach)
+# Fix project ownership
 sudo chown -R $USER:$USER /path/to/project
 
-# Or fix specific Docker volumes
+# Fix Docker volumes
 sudo chown -R 70:70 volumes/postgres    # PostgreSQL
 sudo chown -R 1000:1000 volumes/n8n     # N8N
 chmod 600 secrets/*.txt                 # Secrets
 
-# Scripts auto-fallback to writable locations when needed
-# Check logs in: ~/.n8n-scripts.log or /tmp/n8n-scripts-*.log
+# Check logs in fallback locations
+~/.n8n-scripts.log or /tmp/n8n-scripts-*.log
 ```
 
-**Network connectivity:**
+### SSL/HTTPS Issues
+
 ```bash
-./scripts/validate-deployment.sh        # Validate security
-docker network inspect n8n-backend      # Check networks
+# Check SSL certificate status
+./scripts/health-check.sh
+
+# Verify SSL files and permissions
+ls -la nginx/ssl/
+chmod 600 nginx/ssl/key.pem
+chmod 644 nginx/ssl/fullchain.pem nginx/ssl/dhparam.pem
+
+# Test certificate
+openssl x509 -in nginx/ssl/fullchain.pem -text -noout
 ```
 
 ---
 
-**⚠️ Security Notice**: Regular monitoring with `./scripts/health-check.sh` and updates via `./scripts/update.sh` are essential for security.
+**⚠️ Security Notice**: Regular monitoring with `./scripts/health-check.sh` and updates via `./scripts/update.sh` are essential for production security.
