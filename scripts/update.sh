@@ -12,15 +12,13 @@ source "${SCRIPT_DIR}/lib/health-checks.sh"
 # Configuration
 TIMESTAMP=$(get_timestamp)
 
-# Load environment
-if [ -f "${PROJECT_ROOT}/.env" ]; then
-    source "${PROJECT_ROOT}/.env"
-fi
-
 # Initialize common environment
 init_common
 check_not_root
 change_to_project_root
+
+# Initialize environment with validation
+init_environment false true
 
 print_script_header "N8N Production Update" "Safe updates with automated backup and rollback capability"
 

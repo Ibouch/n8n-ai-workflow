@@ -34,13 +34,11 @@ USE_SIDECAR_CONTAINERS="${BACKUP_USE_SIDECAR:-false}"
 BACKUP_REMOTE_DESTINATION="${BACKUP_REMOTE_DESTINATION:-}"
 BACKUP_REMOTE_TYPE="${BACKUP_REMOTE_TYPE:-}"
 
-# Load environment variables
-if [ -f "${PROJECT_ROOT}/.env" ]; then
-    source "${PROJECT_ROOT}/.env"
-fi
-
 # Initialize common environment
 init_common
+
+# Initialize environment with validation
+init_environment false true
 
 # ==============================================================================
 # BACKUP-SPECIFIC FUNCTIONS

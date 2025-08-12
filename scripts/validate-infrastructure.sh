@@ -17,19 +17,8 @@ source "${SCRIPT_DIR}/lib/health-checks.sh"
 init_common
 change_to_project_root
 
-# Load environment variables from .env if present (export-safe)
-if [ -f "${PROJECT_ROOT}/.env" ]; then
-    # Export all sourced vars in this block; temporarily relax nounset for safe sourcing
-    set -a
-    set +u
-    # shellcheck disable=SC1090
-    source "${PROJECT_ROOT}/.env"
-    set -u
-    set +a
-    log_success "Loaded environment from .env"
-else
-    warn ".env file not found at ${PROJECT_ROOT}/.env - proceeding with defaults"
-fi
+# Initialize environment with validation
+init_environment false true
 
 # Parse command line arguments
 VALIDATION_COMPONENT="${1:-all}"

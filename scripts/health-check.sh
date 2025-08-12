@@ -17,14 +17,12 @@ CHECKS_PASSED=0
 CHECKS_FAILED=0
 WARNINGS=0
 
-# Load environment
-if [ -f "${PROJECT_ROOT}/.env" ]; then
-    source "${PROJECT_ROOT}/.env"
-fi
-
 # Initialize common environment
 init_common
 change_to_project_root
+
+# Initialize environment with validation
+init_environment false true
 
 # Use standardized health check function from lib/health-checks.sh
 # The perform_health_check function provides consistent interface and error handling
