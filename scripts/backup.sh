@@ -146,7 +146,7 @@ backup_postgresql() {
     
     # Read credentials safely
     local postgres_user
-    postgres_user=$(read_secret "postgres_user")
+    postgres_user="${POSTGRES_USER:-n8n_admin}"
     local postgres_db="${POSTGRES_DB:-n8n}"
     local backup_file="${BACKUP_DIR}/postgres_backup.dump"
     
@@ -164,7 +164,7 @@ backup_postgresql() {
             --tmpfs /tmp:noexec,nosuid,size=100m \
             -v "${BACKUP_DIR}:/backup" \
             -v "${SECRETS_DIR}:/secrets:ro" \
-            postgres:16-alpine \
+            postgres:alpine \
             sh -c "pg_dump \
                 -h postgres \
                 -U \"$postgres_user\" \
@@ -245,7 +245,7 @@ backup_redis() {
             --tmpfs /tmp:noexec,nosuid,size=100m \
             -v "${BACKUP_DIR}:/backup" \
             -v "${SECRETS_DIR}:/secrets:ro" \
-            redis:7-alpine \
+            redis:alpine \
             sh -c "redis-cli -h redis --pass \"$redis_password\" BGSAVE && \
                    sleep 5 && \
                    redis-cli -h redis --pass \"$redis_password\" --rdb /backup/redis_backup.rdb"; then
@@ -298,25 +298,30 @@ backup_redis() {
 backup_n8n_data() {
     log_info "Starting N8N data backup..."
     
-    local n8n_data_dir="${PROJECT_ROOT}/volumes/n8n"
     local backup_file="${BACKUP_DIR}/n8n_data.tar"
-    
-    if [ ! -d "$n8n_data_dir" ]; then
-        warn "N8N data directory not found: $n8n_data_dir"
+
+    if ! is_service_running "n8n"; then
+        warn "N8N service is not running, skipping N8N data backup"
         return 0
     fi
-    
-    # Create tar archive (uncompressed first, then process)
-    if tar -cf "$backup_file" -C "${PROJECT_ROOT}/volumes" n8n; then
-        if [ -s "$backup_file" ]; then
-            log_success "N8N data archived successfully"
-            # Process the file (compress/encrypt)
-            process_backup_file "$backup_file"
+
+    # Create tar archive inside the container for the named volume, then copy it out
+    if docker_exec_safe n8n sh -c "tar -cf /tmp/n8n_data.tar -C /home/node .n8n"; then
+        local n8n_container
+        n8n_container=$(get_container_id_safe "n8n")
+        if docker cp "${n8n_container}:/tmp/n8n_data.tar" "$backup_file"; then
+            docker_exec_safe n8n rm -f /tmp/n8n_data.tar || true
+            if [ -s "$backup_file" ]; then
+                log_success "N8N data archived successfully"
+                process_backup_file "$backup_file"
+            else
+                error_exit "N8N data backup file is empty"
+            fi
         else
-            error_exit "N8N data backup file is empty"
+            error_exit "Failed to copy N8N data backup from container"
         fi
     else
-        error_exit "Failed to create N8N data backup"
+        error_exit "Failed to create N8N data archive inside container"
     fi
 }
 

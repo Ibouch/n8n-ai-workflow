@@ -9,14 +9,14 @@ clients:
   - url: http://loki:3100/loki/api/v1/push
 
 scrape_configs:
-  # Scrape Docker container logs
+  # Scrape Docker container logs (Docker on host)
   - job_name: containers
     static_configs:
       - targets:
           - localhost
         labels:
           job: containerlogs
-          __path__: /var/log/containers/*log
+          __path__: /var/lib/docker/containers/*/*-json.log
 
     pipeline_stages:
       - json:
@@ -30,26 +30,24 @@ scrape_configs:
             tag:
       - regex:
           source: tag
-          expression: '^.+?\.(?P<container_name>[^_]+)_(?P<pod_name>[^_]+)_(?P<namespace>[^_]+)_(?P<uid>.+)$'
+          expression: '^.+?\.(?P<container_name>.+)$'
       - timestamp:
           source: time
           format: RFC3339Nano
       - labels:
           stream:
           container_name:
-          pod_name:
-          namespace:
       - output:
           source: output
 
-  # Scrape system logs
+  # Scrape system logs (generic)
   - job_name: syslog
     static_configs:
       - targets:
           - localhost
         labels:
           job: syslog
-          __path__: /var/log/messages
+          __path__: /var/log/syslog
 
   # Scrape nginx logs
   - job_name: nginx

@@ -18,7 +18,8 @@ validate_system_dependencies() {
     # Essential system tools
     local required_commands=(
         "docker"
-        "docker compose" 
+        # Prefer the integrated Docker Compose (docker compose). Keep docker-compose for legacy hosts.
+        "docker"
         "openssl"
         "tar"
         "gzip"
@@ -62,12 +63,17 @@ validate_docker_environment() {
         warn "Docker version $docker_version is older than recommended (20.10.0+)"
     fi
     
-    # Check Docker Compose version (minimum 2.0.0)
-    local compose_version
-    compose_version=$(docker compose version --short 2>/dev/null || echo "0.0.0")
-    
-    if ! version_compare "$compose_version" "2.0.0"; then
-        warn "Docker Compose version $compose_version is older than recommended (2.0.0+)"
+    # Check Docker Compose availability and version (minimum 2.0.0)
+    if docker compose version >/dev/null 2>&1; then
+        local compose_version
+        compose_version=$(docker compose version --short 2>/dev/null || echo "0.0.0")
+        if ! version_compare "$compose_version" "2.0.0"; then
+            warn "Docker Compose version $compose_version is older than recommended (2.0.0+)"
+        fi
+    elif command -v docker-compose >/dev/null 2>&1; then
+        warn "Legacy docker-compose detected. Please migrate to 'docker compose' v2+"
+    else
+        error_exit "Docker Compose not available. Install Docker Compose v2 (docker compose)"
     fi
     
     # Check Docker permissions
@@ -194,14 +200,12 @@ validate_secrets_configuration() {
         error_exit "Secrets directory not found: $SECRETS_DIR. Run ./scripts/generate-secrets.sh"
     fi
     
+    # Align required secrets with generate-secrets.sh and compose files
     local required_secrets=(
-        "postgres_user"
         "postgres_password"
-        "n8n_user"
         "n8n_password"
         "n8n_encryption_key"
         "redis_password"
-        "grafana_user"
         "grafana_password"
         "smtp_password"
     )
@@ -282,11 +286,13 @@ validate_network_configuration() {
     fi
     
     # Check port conflicts
-    local used_ports=(80 443 5678 5432 6379 9090 3000)
+    local used_ports=(80 443 5678 5432 6379 9090 3000 9093 3100 9080 9100 8080)
     local conflicting_ports=()
     
     for port in "${used_ports[@]}"; do
-        if ss -tuln | grep -q ":$port "; then
+        if (command -v ss >/dev/null 2>&1 && ss -tuln | grep -q ":$port ") || \
+           (command -v lsof >/dev/null 2>&1 && lsof -i :"$port" >/dev/null 2>&1) || \
+           (netstat -an 2>/dev/null | grep -E "\.$port\s" >/dev/null 2>&1); then
             if ! docker compose ps | grep -q ":$port->"; then
                 conflicting_ports+=("$port")
             fi

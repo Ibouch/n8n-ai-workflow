@@ -493,7 +493,8 @@ init_common() {
     local skip_secrets_validation="${1:-false}"
     
     # Validate basic requirements
-    require_commands "docker" "docker-compose"
+    # Require Docker;
+    require_commands "docker"
     validate_project_structure "$skip_secrets_validation"
     
     # Set up signal handlers for cleanup

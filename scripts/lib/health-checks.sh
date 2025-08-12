@@ -143,7 +143,7 @@ check_postgresql_connection() {
     fi
     
     local postgres_user
-    postgres_user=$(read_secret "postgres_user")
+    postgres_user="${POSTGRES_USER:-n8n_admin}"
     local postgres_db="${POSTGRES_DB:-n8n}"
     
     docker_exec_safe postgres pg_isready -U "$postgres_user" -d "$postgres_db"
@@ -166,7 +166,7 @@ get_database_size() {
     fi
     
     local postgres_user
-    postgres_user=$(read_secret "postgres_user")
+    postgres_user="${POSTGRES_USER:-n8n_admin}"
     local postgres_db="${POSTGRES_DB:-n8n}"
     
     docker_exec_safe postgres psql -U "$postgres_user" -d "$postgres_db" -t -c \
@@ -181,7 +181,7 @@ check_long_running_queries() {
     fi
     
     local postgres_user
-    postgres_user=$(read_secret "postgres_user")
+    postgres_user="${POSTGRES_USER:-n8n_admin}"
     local postgres_db="${POSTGRES_DB:-n8n}"
     local threshold_minutes="${1:-5}"
     
@@ -418,7 +418,7 @@ check_backup_status() {
     fi
     
     local backup_timestamp
-    backup_timestamp=$(stat -c %Y "${backup_dir}/${latest_backup}" 2>/dev/null || echo "0")
+    backup_timestamp=$(get_file_mtime_epoch "${backup_dir}/${latest_backup}")
     
     local current_timestamp
     current_timestamp=$(date +%s)

@@ -29,7 +29,10 @@ log_info "Performing comprehensive pre-flight checks..."
 
 # Validate project structure and requirements
 validate_project_structure
-require_commands "docker" "docker compose"
+# Docker presence already checked in init_common; verify Compose v2 specifically
+if ! docker compose version >/dev/null 2>&1; then
+  error_exit "Docker Compose v2 is required (docker compose). Please install/upgrade."
+fi
 
 # Check Docker Compose configuration
 validate_compose_config

@@ -20,25 +20,28 @@
 # 1. Clone and navigate
 git clone <repository-url> && cd n8n
 
-# 2. Generate secrets (first time only)
+# 2. Install system dependencies (Debian 12 target)
+./scripts/install-dependencies.sh
+
+# 3. Generate secrets (first time only)
 ./scripts/generate-secrets.sh
 
-# 3. Validate system requirements
+# 4. Validate system requirements
 ./scripts/validate-infrastructure.sh
 
-# 4. Configure environment (optional)
+# 5. Configure environment (optional)
 cp env.example .env
 # Edit: N8N_HOST, N8N_PROTOCOL, WEBHOOK_URL
 
-# 5. Deploy with production monitoring
+# 6. Deploy with production monitoring
 docker compose -f compose.yml -f compose.prod.yml up -d
 
-# 6. Setup security hardening (requires root access)
+# 7. Setup security hardening (requires root access)
 sudo ./scripts/setup-security.sh
 sudo ./scripts/load-apparmor-profiles.sh
 sudo ./scripts/network-security.sh
 
-# 7. Verify deployment health
+# 8. Verify deployment health
 ./scripts/health-check.sh
 ```
 
@@ -311,8 +314,10 @@ age -d -i ../../secrets/age-key.txt postgresql.sql.age | \
   docker compose exec -T postgres psql -U postgres -d n8n
 
 # 4. Decrypt and restore N8N data
-age -d -i ../../secrets/age-key.txt n8n_data.tar.age | \
-  tar -xf - -C ../../volumes/n8n/
+age -d -i ../../secrets/age-key.txt n8n_data.tar.age > /tmp/n8n_data.tar
+docker compose exec -T n8n sh -c "rm -rf /home/node/.n8n/*"
+docker cp /tmp/n8n_data.tar $(docker compose ps -q n8n):/tmp/n8n_data.tar
+docker compose exec -T n8n sh -c "tar -xf /tmp/n8n_data.tar -C /home/node && rm -f /tmp/n8n_data.tar && chown -R 1000:1000 /home/node/.n8n"
 
 # 5. Decrypt and restore Redis data (optional)
 age -d -i ../../secrets/age-key.txt redis_data.tar.age | \

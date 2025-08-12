@@ -97,7 +97,7 @@ fi
 
 # Database size check
 if is_service_running "postgres"; then
-    postgres_user=$(read_secret "postgres_user")
+    postgres_user="${POSTGRES_USER:-n8n_admin}"
     DB_SIZE=$(docker_exec_safe postgres psql -U "$postgres_user" -d "${POSTGRES_DB:-n8n}" -t -c "SELECT pg_size_pretty(pg_database_size('${POSTGRES_DB:-n8n}'));" 2>/dev/null | tr -d ' \r\n' || echo "unknown")
 else
     DB_SIZE="service not running"
@@ -106,7 +106,7 @@ echo "Database size: ${DB_SIZE}"
 
 # Check for long-running queries
 if is_service_running "postgres"; then
-    postgres_user=$(read_secret "postgres_user")
+    postgres_user="${POSTGRES_USER:-n8n_admin}"
     LONG_QUERIES=$(docker_exec_safe postgres psql -U "$postgres_user" -d "${POSTGRES_DB:-n8n}" -t -c "SELECT count(*) FROM pg_stat_activity WHERE state != 'idle' AND query_start < now() - interval '5 minutes';" 2>/dev/null | tr -d ' \r\n' || echo "0")
     if [ "${LONG_QUERIES}" -gt 0 ]; then
         echo -e "${YELLOW}${WARNING} Warning: ${LONG_QUERIES} long-running queries detected${NC}"

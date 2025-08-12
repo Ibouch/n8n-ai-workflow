@@ -89,8 +89,8 @@ else
     warn "age encryption tool not found. Install 'age' for backup encryption support."
 fi
 
-# Set proper permissions
-chmod 600 "${SECRETS_DIR}"/*.txt
+# Set proper permissions (portable across GNU/BSD)
+find "${SECRETS_DIR}" -type f -name "*.txt" -exec chmod 600 {} +
 chmod 700 "${SECRETS_DIR}"
 
 log_success "Secrets generation completed!"

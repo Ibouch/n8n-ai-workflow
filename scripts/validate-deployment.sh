@@ -84,7 +84,7 @@ validate_check "Nginx configuration" "check_nginx_configuration" false
 # Check container security configuration
 info "Validating container security..."
 
-# Check for non-root users
+# Check for non-root users (helper)
 check_container_user() {
     local container="$1"
     local expected_user="$2"
@@ -145,8 +145,12 @@ if docker compose ps nginx 2>/dev/null | grep -q "Up"; then
     if [ -f "nginx/ssl/fullchain.pem" ] && [ -f "nginx/ssl/key.pem" ]; then
         log "SSL certificates are present"
         
-        # Check certificate validity
-        cert_days=$(openssl x509 -in nginx/ssl/fullchain.pem -noout -checkend 2592000 2>/dev/null && echo "valid" || echo "expiring")
+        # Check certificate validity (expires > 30d)
+        if openssl x509 -in nginx/ssl/fullchain.pem -noout -checkend 2592000 >/dev/null 2>&1; then
+            cert_days="valid"
+        else
+            cert_days="expiring"
+        fi
         if [ "$cert_days" = "valid" ]; then
             log "SSL certificate is valid for >30 days"
         else

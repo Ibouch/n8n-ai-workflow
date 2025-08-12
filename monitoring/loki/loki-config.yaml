@@ -3,6 +3,8 @@ auth_enabled: false
 server:
   http_listen_port: 3100
   grpc_listen_port: 9096
+  log_level: info
+  graceful_shutdown_timeout: 30s
 
 common:
   path_prefix: /loki
@@ -17,7 +19,29 @@ common:
       store: inmemory
 
 query_scheduler:
-  max_outstanding_requests_per_tenant: 32768
+  max_outstanding_requests_per_tenant: 4096
+
+querier:
+  max_concurrent: 16
+
+ingester:
+  lifecycler:
+    address: 127.0.0.1
+    ring:
+      kvstore:
+        store: inmemory
+      replication_factor: 1
+  chunk_idle_period: 3m
+  chunk_block_size: 262144
+  chunk_encoding: gzip
+  chunk_retain_period: 1m
+  max_transfer_retries: 0
+
+ingester_client:
+  grpc_client_config:
+    max_recv_msg_size: 67108864
+    max_send_msg_size: 67108864
+    grpc_compression: gzip
 
 schema_config:
   configs:
@@ -29,17 +53,65 @@ schema_config:
         prefix: index_
         period: 24h
 
+storage_config:
+  boltdb_shipper:
+    active_index_directory: /loki/boltdb-shipper-active
+    cache_location: /loki/boltdb-shipper-cache
+    cache_ttl: 24h
+    shared_store: filesystem
+  filesystem:
+    directory: /loki/chunks
+
+limits_config:
+  retention_period: 30d
+  enforce_metric_name: false
+  reject_old_samples: true
+  reject_old_samples_max_age: 168h
+  ingestion_rate_mb: 16
+  ingestion_burst_size_mb: 32
+  max_query_parallelism: 16
+  max_streams_per_user: 10000
+  max_line_size: 256000
+  max_entries_limit_per_query: 5000
+  max_query_time: 720h
+  max_cache_freshness_per_query: 10m
+
+compactor:
+  working_directory: /loki/retention
+  shared_store: filesystem
+  compaction_interval: 10m
+  retention_enabled: true
+  retention_delete_delay: 2h
+  retention_delete_worker_count: 150
+
 ruler:
   alertmanager_url: http://alertmanager:9093
+  store_type: local
+  rule_path: /loki/rules
+  ring:
+    kvstore:
+      store: inmemory
+  enable_api: true
+  enable_alertmanager_v2: true
 
-# By default, Loki will send anonymous, but uniquely-identifiable usage and configuration
-# analytics to Grafana Labs. These statistics are sent to https://stats.grafana.org/
-#
-# Statistics help us better understand how Loki is used, and they show us performance
-# levels for most users. This helps us prioritize features and documentation.
-# For more information on what's sent: https://github.com/grafana/loki/blob/main/docs/sources/configuration/telemetry.md
-# Refer to the buildReport method to see what goes into a report.
-#
-# If you would like to disable reporting, uncomment the following lines:
 analytics:
- reporting_enabled: false
+  reporting_enabled: false
+
+tracing:
+  enabled: false
+
+table_manager:
+  retention_deletes_enabled: true
+  retention_period: 30d
+
+query_range:
+  align_queries_with_step: true
+  max_retries: 5
+  parallelise_shardable_queries: true
+  cache_results: true
+  results_cache:
+    cache:
+      enable_fifocache: true
+      fifocache:
+        max_size_items: 1024
+        ttl: 24h
