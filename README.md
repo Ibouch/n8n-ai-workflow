@@ -26,12 +26,11 @@ git clone <repository-url> && cd n8n
 # 3. Generate secrets (first time only)
 ./scripts/generate-secrets.sh
 
-# 4. Validate system requirements
-./scripts/validate-infrastructure.sh
-
-# 5. Configure environment (optional)
+# 4. Configure environment + edit
 cp env.example .env
-# Edit: N8N_HOST, N8N_PROTOCOL, WEBHOOK_URL
+
+# 5. Validate system requirements
+./scripts/validate-infrastructure.sh
 
 # 6. Deploy with production monitoring
 docker compose -f compose.yml -f compose.prod.yml up -d
