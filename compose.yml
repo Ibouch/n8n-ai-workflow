@@ -72,11 +72,12 @@ services:
     image: postgres:alpine
     container_name: n8n-postgres
     restart: unless-stopped
-    user: "70:70"
     security_opt:
       - no-new-privileges:true
       - apparmor:n8n_postgres_profile
       - seccomp:./security/seccomp-profile.json
+    cap_drop:
+      - ALL
     cap_add:
       - CHOWN
       - DAC_OVERRIDE
@@ -265,11 +266,17 @@ services:
     image: redis:alpine
     container_name: n8n-redis
     restart: unless-stopped
-    user: "999:999"
     security_opt:
       - no-new-privileges:true
       - apparmor:n8n_redis_profile
       - seccomp:./security/seccomp-profile.json
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - SETGID
+      - SETUID
     tmpfs:
       - /tmp:noexec,nosuid,size=100m
       - /etc/redis:noexec,nosuid,size=10m
