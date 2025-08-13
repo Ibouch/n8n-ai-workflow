@@ -132,10 +132,6 @@ services:
   # ==============================================================================
   
   nginx:
-    sysctls:
-      - net.core.somaxconn=65535
-      - net.ipv4.ip_local_port_range=1024 65535
-      - net.core.netdev_max_backlog=5000
     ulimits:
       nofile:
         soft: 65536
