@@ -58,26 +58,36 @@ readonly INFO="ℹ"
 
 # Enhanced logging function with levels and file output
 log() {
-    local level="${1:-INFO}"
-    local message="$2"
-    local timestamp=$(date +'%Y-%m-%d %H:%M:%S')
+    local level
+    local message
+    # Support both two-argument (level, message) and one-argument (message only) usage
+    if [ "$#" -ge 2 ]; then
+        level="$1"
+        message="$2"
+    else
+        level="INFO"
+        message="$1"
+    fi
+    local timestamp
+    timestamp=$(date +'%Y-%m-%d %H:%M:%S')
     
     # Format log entry
     local log_entry="[${timestamp}] [${level}] ${message}"
     
-    # Color mapping for different log levels
+    # Color and symbol mapping for different log levels
     local color=""
+    local symbol="$INFO"
     case "$level" in
-        "ERROR") color="$RED" ;;
-        "WARN"|"WARNING") color="$YELLOW" ;;
-        "SUCCESS") color="$GREEN" ;;
-        "INFO") color="$BLUE" ;;
-        "DEBUG") color="$PURPLE" ;;
-        *) color="$NC" ;;
+        "ERROR") color="$RED"; symbol="$CROSS" ;;
+        "WARN"|"WARNING") color="$YELLOW"; symbol="$WARNING" ;;
+        "SUCCESS") color="$GREEN"; symbol="$CHECKMARK" ;;
+        "INFO") color="$BLUE"; symbol="$INFO" ;;
+        "DEBUG") color="$PURPLE"; symbol="$INFO" ;;
+        *) color="$NC"; symbol="$INFO" ;;
     esac
     
     # Output to console with color
-    echo -e "${color}${CHECKMARK} ${message}${NC}"
+    echo -e "${color}${symbol} ${message}${NC}"
     
     # Output to log file without color (silently ignore if can't write)
     echo "$log_entry" >> "$LOG_FILE" 2>/dev/null || true
