@@ -5,6 +5,7 @@ profile n8n_postgres_profile flags=(attach_disconnected,mediate_deleted) {
   #include <abstractions/bash>
   #include <abstractions/consoles>
   #include <abstractions/nameservice>
+  #include <abstractions/shells>
 
   # Network access
   network inet tcp,
@@ -13,27 +14,59 @@ profile n8n_postgres_profile flags=(attach_disconnected,mediate_deleted) {
   # File system access
   / r,
   /bin/** mr,
+  /sbin/** mr,
+  /usr/bin/** mx,
+  /usr/sbin/** mx,
   /usr/bin/env ix,
   /bin/sh ix,
   /bin/bash ix,
+  /bin/dash ix,
   /lib/** mr,
   /lib64/** mr,
   /usr/** mr,
   /etc/** r,
+  /dev/null rw,
+  /dev/zero r,
+  /dev/random r,
+  /dev/urandom r,
+  /dev/tty rw,
+  /dev/pts/** rw,
 
+  # Process and system information
+  @{PROC}/*/stat r,
+  @{PROC}/*/status r,
+  @{PROC}/*/cmdline r,
+  @{PROC}/sys/kernel/pid_max r,
+  @{PROC}/version r,
+  @{PROC}/meminfo r,
+  @{PROC}/cpuinfo r,
+  @{PROC}/loadavg r,
+  @{PROC}/self/** r,
+  owner @{PROC}/*/task/*/stat r,
+  
   # PostgreSQL specific directories
   /var/lib/postgresql/** rw,
   /var/lib/postgresql/data/** rw,
   /var/run/postgresql/** rw,
   /tmp/** rw,
+  /var/tmp/** rw,
 
-  # PostgreSQL binaries
+  # Docker initialization
+  /docker-entrypoint-initdb.d/** r,
+  /usr/local/bin/docker-entrypoint.sh rix,
+  /docker-entrypoint.sh rix,
+
+  # PostgreSQL binaries and libraries
   /usr/local/bin/postgres ix,
   /usr/local/bin/pg_* ix,
-  /usr/local/bin/docker-entrypoint.sh ix,
+  /usr/local/lib/postgresql/** mr,
+  /usr/local/share/postgresql/** r,
 
   # Secrets access
   /run/secrets/** r,
+
+  # Signal handling and process control
+  signal (send,receive) set=(term,int,quit,hup,usr1,usr2),
 
   # Deny dangerous operations
   deny @{PROC}/sys/kernel/** w,
@@ -50,6 +83,7 @@ profile n8n_postgres_profile flags=(attach_disconnected,mediate_deleted) {
   capability fowner,
   capability setgid,
   capability setuid,
+  capability sys_resource,
 
   # Deny other capabilities
   deny capability sys_admin,

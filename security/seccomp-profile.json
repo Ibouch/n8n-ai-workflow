@@ -74,6 +74,7 @@
         "getgroups",
         "getgroups32",
         "getpeername",
+        "getpgid",
         "getpgrp",
         "getpid",
         "getppid",

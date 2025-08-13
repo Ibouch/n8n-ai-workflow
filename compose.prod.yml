@@ -486,6 +486,8 @@ volumes:
     driver: local
   alertmanager_data:
     driver: local
+  logs:
+    driver: local
 
 secrets:
   postgres_password:

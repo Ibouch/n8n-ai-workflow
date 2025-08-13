@@ -335,6 +335,9 @@ volumes:
   
   nginx_logs:
     driver: local
+  
+  logs:
+    driver: local
 
 # ==============================================================================
 # SECRETS MANAGEMENT - File-based Docker secrets for secure credential injection
