@@ -14,6 +14,9 @@ profile n8n_redis_profile flags=(attach_disconnected,mediate_deleted) {
   # File system access
   / r,
   /bin/** mr,
+  /usr/bin/env ix,
+  /bin/sh ix,
+  /bin/bash ix,
   /lib/** mr,
   /lib64/** mr,
   /usr/** mr,
@@ -27,6 +30,7 @@ profile n8n_redis_profile flags=(attach_disconnected,mediate_deleted) {
   # Redis binary
   /usr/local/bin/redis-server ix,
   /usr/local/bin/redis-cli ix,
+  /usr/local/bin/docker-entrypoint.sh ix,
 
   # Deny dangerous operations
   deny @{PROC}/sys/kernel/** w,
