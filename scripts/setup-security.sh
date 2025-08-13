@@ -47,6 +47,7 @@ setup_docker_daemon_security() {
     
     local docker_config="/etc/docker/daemon.json"
     local backup_file="/etc/docker/daemon.json.backup.$(date +%Y%m%d_%H%M%S)"
+    local seccomp_profile="${PROJECT_ROOT}/security/seccomp-profile.json"
     
     # Create /etc/docker directory if it doesn't exist
     mkdir -p /etc/docker
@@ -61,7 +62,7 @@ setup_docker_daemon_security() {
         
         if command -v jq >/dev/null 2>&1; then
             # Use jq if available for proper JSON merging
-            jq '. + {
+            jq --arg sp "$seccomp_profile" '. + {
                 "no-new-privileges": true,
                 "userns-remap": "default",
                 "log-driver": "json-file",
@@ -72,7 +73,8 @@ setup_docker_daemon_security() {
                 "icc": false,
                 "userland-proxy": false,
                 "experimental": false,
-                "live-restore": true
+                "live-restore": true,
+                "seccomp-profile": $sp
             }' "$docker_config" > "$temp_config"
             mv "$temp_config" "$docker_config"
         else
@@ -97,7 +99,7 @@ setup_docker_daemon_security() {
 setup_docker_daemon_security_fallback() {
     local docker_config="$1"
     
-    cat > "$docker_config" << 'EOF'
+    cat > "$docker_config" << EOF
 {
   "no-new-privileges": true,
   "userns-remap": "default",
@@ -109,7 +111,8 @@ setup_docker_daemon_security_fallback() {
   "icc": false,
   "userland-proxy": false,
   "experimental": false,
-  "live-restore": true
+  "live-restore": true,
+  "seccomp-profile": "${PROJECT_ROOT}/security/seccomp-profile.json"
 }
 EOF
 }

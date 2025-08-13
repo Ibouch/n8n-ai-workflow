@@ -1,4 +1,4 @@
-# 🚀 N8N Production Infrastructure
+# N8N Production Infrastructure
 
 [![Docker](https://img.shields.io/badge/Docker-20.10+-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
 [![Security](https://img.shields.io/badge/Security-Hardened-green?logo=shield&logoColor=white)](https://github.com/user/repo/actions)
@@ -6,408 +6,335 @@
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/Version-1.0.0-brightgreen)](https://github.com/user/repo/releases)
 
-> Production-ready N8N workflow automation with enterprise security, monitoring, and unified management.
+> Enterprise-grade N8N workflow automation with comprehensive security, monitoring, and management.
 
-## 🚀 Quick Start
+## Prerequisites
 
-### Prerequisites
-- Docker Engine 20.10+ & Docker Compose 2.0+
-- Linux host (required for security features)
+- **Docker Engine** 20.10+ with Compose 2.0+
+- **Linux host** (required for AppArmor security profiles)
+- **Domain name** with DNS pointing to your server
+- **SSL certificates** (Let's Encrypt recommended)
 
-### Complete Setup Process
+## 🚀 Installation
+
+### 1. Initial Setup
 
 ```bash
-# 1. Clone and navigate to project
-git clone <repository-url> && cd n8n
+# Clone repository
+git clone <repository-url> && cd <repository-url>
 
-# 2. Install system dependencies
+# Install dependencies & prepare environment
 ./scripts/install-dependencies.sh
-
-# 3. Generate secrets and SSL directory structure
 ./scripts/generate-secrets.sh
-
-# 4. Configure environment variables
 cp env.example .env
-# Edit .env with your domain, SMTP settings, etc.
-
-# 5. Setup SSL certificates with Let's Encrypt
-sudo certbot certonly --standalone -d yourdomain.com
-sudo cp /etc/letsencrypt/live/yourdomain.com/fullchain.pem nginx/ssl/
-sudo cp /etc/letsencrypt/live/yourdomain.com/privkey.pem nginx/ssl/key.pem
-sudo chown $USER:$USER nginx/ssl/*.pem
-
-# 6. Validate infrastructure before deployment
-./scripts/validate-infrastructure.sh
-
-# 7. Configure AppArmor (required for hardened Docker runtime)
-sudo ./scripts/setup-apparmor.sh
-
-# If prompted to reboot, run:
-#   sudo reboot
-# After reboot, re-run AppArmor setup:
-#   sudo ./scripts/setup-apparmor.sh
-
-# 8. Deploy services with monitoring stack
-docker compose -f compose.yml -f compose.prod.yml up -d
-
-# Wait for services to initialize (2-3 minutes)
-
-# 9. Verify deployment health and configuration
-./scripts/health-check.sh
-
-# 10. Setup security hardening
-sudo ./scripts/setup-security.sh
-
-# 11. Final health verification
-./scripts/health-check.sh
 ```
 
-**Access**: https://your-domain.com (credentials in `secrets/n8n_*`)
+### 2. Configure Environment
 
-### Important Setup Notes
-
-**🔐 SSL Certificates**
-- **Required for production**: HTTPS access needs valid SSL certificates
-- **Auto-generated dhparam.pem**: The secrets script creates secure DH parameters
-- **Certificate placement**: Must be in `nginx/ssl/` before starting services
-
-**📁 Directory Structure**
-- **Auto-creation**: Scripts create required directories automatically
-- **Permission handling**: Graceful fallback to user home/temp for logs
-- **No sudo needed**: Most scripts run as regular user (except security hardening)
-
-**⚠️ Common Issues**
-```bash
-# Fix project ownership if needed
-sudo chown -R $USER:$USER /path/to/project
-
-# Ensure correct SSL certificate permissions
-chmod 600 nginx/ssl/key.pem
-chmod 644 nginx/ssl/fullchain.pem nginx/ssl/dhparam.pem
-
-# If services fail to start, check logs
-docker compose logs <service-name>
-```
-
-- If you see: `write /proc/thread-self/attr/apparmor/exec: no such file or directory`
-  - Run: `sudo ./scripts/setup-apparmor.sh`
-  - Reboot if requested, then re-run the script
-
-## ⚙️ Configuration
-
-### Environment Variables (.env)
+Edit `.env` with your settings:
 
 ```bash
-# Domain & Protocol
+# Domain Configuration
 N8N_HOST=your-domain.com
 N8N_PROTOCOL=https
 WEBHOOK_URL=https://your-domain.com/
 
-# SMTP Configuration
+# Email Settings
 SMTP_HOST=smtp-mail.your-domain.com
 SMTP_PORT=587
 SMTP_USERNAME=your-email@your-domain.com
 ALERT_EMAIL_TO=admin@your-domain.com
 
-# Service Credentials (usernames only - passwords in secrets/)
+# Service Users (passwords auto-generated in secrets/)
 POSTGRES_USER=n8n_admin
 N8N_ADMIN_USER=admin
 GRAFANA_ADMIN_USER=admin
 ```
 
-### SSL Certificates
+### 3. SSL Certificates
 
 ```bash
-# SSL directory structure (created by generate-secrets.sh)
-nginx/ssl/
-├── fullchain.pem     # Certificate chain (from Let's Encrypt)
-├── key.pem           # Private key (from Let's Encrypt)
-├── dhparam.pem       # Auto-generated secure DH parameters
-└── README.md         # Auto-generated setup instructions
-```
+# Generate certificates with Let's Encrypt
+sudo certbot certonly --standalone -d your-domain.com
 
-**Certificate Setup with Let's Encrypt:**
-```bash
-# Initial certificate generation
-sudo certbot certonly --standalone -d yourdomain.com
-
-# Copy to project directory
-sudo cp /etc/letsencrypt/live/yourdomain.com/fullchain.pem nginx/ssl/
-sudo cp /etc/letsencrypt/live/yourdomain.com/privkey.pem nginx/ssl/key.pem
+# Copy to project (script handles permissions)
+sudo cp /etc/letsencrypt/live/your-domain.com/fullchain.pem nginx/ssl/
+sudo cp /etc/letsencrypt/live/your-domain.com/privkey.pem nginx/ssl/key.pem
 sudo chown $USER:$USER nginx/ssl/*.pem
-
-# Setup auto-renewal (crontab)
-0 3 * * * certbot renew --quiet --post-hook "docker compose restart nginx"
 ```
 
-## 🔒 Security
-
-### Architecture
-
-| **Layer** | **Implementation** |
-|-----------|-------------------|
-| **Container Hardening** | Non-root execution, read-only filesystems, seccomp profiles |
-| **AppArmor Profiles** | Custom mandatory access control for all services |
-| **Network Segmentation** | DMZ (172.20.0.0/24) ↔ Internal (172.21.0.0/24) isolation |
-| **Secrets Management** | Docker secrets, age encryption, secure generation |
-| **Access Control** | Zero external backend access, minimal capabilities |
-| **Monitoring** | Security events, audit logs, comprehensive health checks |
-
-### AppArmor Security Profiles
+### 4. Deploy
 
 ```bash
-# Setup AppArmor (requires root)
+# Validate configuration
+./scripts/validate-infrastructure.sh
+
+# Setup security profiles (requires reboot if AppArmor not enabled)
 sudo ./scripts/setup-apparmor.sh
 
-# Verify profiles are loaded and active
-sudo aa-status | grep n8n
-
-# Monitor AppArmor denials (security violations)
-journalctl -f | grep apparmor
-```
-
-Notes:
-- AppArmor profiles auto-load on boot via the `apparmor-n8n.service` systemd unit (before Docker starts).
-
-**Profile Coverage**:
-- **n8n_postgres_profile**: Database security constraints
-- **n8n_app_profile**: N8N application restrictions  
-- **n8n_nginx_profile**: Web server access controls
-- **n8n_redis_profile**: Cache service limitations
-
-## 📊 Monitoring & Observability
-
-### Monitoring Stack Components
-
-- **Grafana**: http://localhost:3000 - Dashboards and alerting
-- **Prometheus**: http://localhost:9090 - Metrics collection  
-- **Alertmanager**: http://localhost:9093 - Alert routing
-- **Loki**: Log aggregation and analysis
-- **Promtail**: Log collection agent
-
-### Initial Monitoring Setup
-
-```bash
-# 1. Deploy with monitoring stack
+# Deploy services
 docker compose -f compose.yml -f compose.prod.yml up -d
 
-# 2. Verify monitoring services
-docker compose ps | grep -E "(prometheus|grafana|loki|alertmanager)"
-
-# 3. Access Grafana (credentials in secrets/grafana_*)
-open http://localhost:3000
-
-# 4. Import production dashboards
-# - Container metrics dashboard ID: 893
-# - PostgreSQL dashboard ID: 9628
-# - Redis dashboard ID: 763
-```
-
-### Custom Alerts Configuration
-
-```bash
-# Edit alert rules
-vim monitoring/prometheus/alerts.yml
-vim monitoring/alertmanager/alertmanager.yml
-
-# Reload configuration without restart
-docker compose exec prometheus kill -HUP 1
-docker compose exec alertmanager kill -HUP 1
-```
-
-**Alert Rules**:
-- Service health checks (1-minute intervals)
-- Resource utilization warnings (>80% threshold)
-- Security events (failed logins, unusual traffic)
-- Application performance (response times, errors)
-
-## 🛠️ Management Commands
-
-| **Operation** | **Command** | **Purpose** |
-|---------------|-------------|-------------|
-| **Health Check** | `./scripts/health-check.sh` | Comprehensive service monitoring |
-| **Backup** | `./scripts/backup.sh` | Encrypted backups with verification |
-| **Update** | `./scripts/update.sh` | Safe updates with rollback |
-| **Validate** | `./scripts/validate-infrastructure.sh` | System validation |
-| **Generate Secrets** | `./scripts/generate-secrets.sh` | Create secrets & SSL directory |
-| **Security Setup** | `sudo ./scripts/setup-security.sh` | Complete security hardening |
-| **Docker Security** | `sudo ./scripts/setup-security.sh --docker-daemon` | Docker daemon security only |
-| **AppArmor** | `sudo ./scripts/setup-apparmor.sh` | Install, enable, and load AppArmor profiles |
-
-## 🔐 Secrets Management
-
-### Secret Generation
-
-```bash
-# Generate all required secrets and SSL directory
-./scripts/generate-secrets.sh
-
-# Force regenerate all secrets (security rotation)
-./scripts/generate-secrets.sh --force
-
-# Validate secrets configuration
-./scripts/validate-infrastructure.sh secrets
-```
-
-### Generated Structure
-
-```
-secrets/                     # Auto-created with 700 permissions
-├── postgres_password.txt    # Database password (32 chars)
-├── n8n_password.txt         # N8N admin password (24 chars)
-├── n8n_encryption_key.txt   # N8N data encryption key (32 chars)
-├── redis_password.txt       # Redis authentication (32 chars)
-├── grafana_password.txt     # Grafana admin password (24 chars)
-├── smtp_password.txt        # Email service password (24 chars)
-├── age-key.txt              # Backup encryption private key
-└── age-recipients.txt       # Backup encryption public key
-```
-
-### Secret Rotation Process
-
-```bash
-# 1. Generate new secrets
-./scripts/generate-secrets.sh
-
-# 2. Validate secret strength and permissions
-./scripts/validate-infrastructure.sh secrets
-
-# 3. Apply new secrets (rolling restart)
-docker compose up -d --force-recreate
-
-# 4. Verify services with new secrets
+# Verify deployment
 ./scripts/health-check.sh
 ```
 
-**Security Best Practices**:
-- All secret files must have `600` permissions
-- Secrets directory must have `700` permissions
-- Regular rotation recommended (quarterly for production)
+**Access your instance**: `https://your-domain.com`  
+**Credentials**: Check `secrets/n8n_password.txt`
 
-## 🔄 Backup & Recovery
+## 🔒 Security Architecture
 
-### Automated Backup System
+### Defense Layers
+
+| Layer | Implementation |
+|-------|---------------|
+| **Container Isolation** | Non-root users, read-only filesystems, minimal capabilities |
+| **Mandatory Access Control** | AppArmor profiles for all services |
+| **Network Segmentation** | DMZ (172.20.0.0/24) ↔ Internal (172.21.0.0/24) |
+| **Secrets Management** | Docker secrets with age encryption |
+| **SSL/TLS** | Force HTTPS, modern cipher suites, HSTS enabled |
+
+### AppArmor Profiles
+
+Security profiles automatically load on boot via systemd:
+
+```bash
+# Check profile status
+sudo aa-status | grep n8n
+
+# Monitor security violations
+journalctl -f | grep apparmor
+
+# Manual reload if needed
+sudo ./scripts/load-apparmor-profiles.sh
+```
+
+## 📊 Monitoring
+
+### Access Points
+
+- **Grafana**: `http://localhost:3000` - Dashboards & alerts
+- **Prometheus**: `http://localhost:9090` - Metrics store
+- **Alertmanager**: `http://localhost:9093` - Alert routing
+
+### Dashboard Setup
+
+1. Login to Grafana (credentials in `secrets/grafana_password.txt`)
+2. Import dashboards:
+   - Container Metrics: `893`
+   - PostgreSQL: `9628`
+   - Redis: `763`
+
+### Alert Configuration
+
+Edit monitoring configs and reload without restart:
+
+```bash
+vim monitoring/prometheus/alerts.yml
+docker compose exec prometheus kill -HUP 1
+vim monitoring/alertmanager/alertmanager.yml
+docker compose exec alertmanager kill -HUP 1
+```
+
+## 🔄 Operations
+
+### Daily Management
+
+```bash
+# Health monitoring
+./scripts/health-check.sh
+
+# View logs
+docker compose logs -f <service>
+
+# Backup data
+./scripts/backup.sh
+```
+
+### Maintenance Tasks
+
+```bash
+# Update services
+./scripts/update.sh
+
+# Rotate secrets
+./scripts/generate-secrets.sh --force
+docker compose up -d --force-recreate
+
+# Certificate renewal (add to crontab)
+0 3 * * * certbot renew --quiet --post-hook "docker compose restart nginx"
+```
+
+## 💾 Backup & Recovery
+
+### Automated Backups
 
 ```bash
 # Manual backup
 ./scripts/backup.sh
 
-# Automated daily backup (add to crontab)
-0 2 * * * cd /path/to/n8n && ./scripts/backup.sh >/dev/null 2>&1
-
-# Backup with custom retention (default: 7 days)
-RETENTION_DAYS=30 ./scripts/backup.sh
+# Schedule daily backups (crontab)
+0 2 * * * cd /path/to/n8n && ./scripts/backup.sh
 ```
 
-### Backup Components
-
-- **PostgreSQL database**: Full database dump with schema
-- **N8N data**: Workflows, credentials, and settings  
-- **Redis data**: Cache and queue state
-- **Configuration files**: Docker Compose, nginx, monitoring configs
-- **Secrets**: Encrypted secret files (with separate key)
-
-### Backup Structure
-
-```
-backups/
-├── 20240101_120000/           # Timestamp-based directories
-│   ├── postgresql.sql.age     # Encrypted database dump
-│   ├── n8n_data.tar.age       # Encrypted N8N data
-│   ├── redis_data.tar.age     # Encrypted Redis data
-│   ├── config.tar.age         # Encrypted configuration
-│   ├── backup_metadata.json   # Backup information
-│   └── checksums.sha256       # File integrity checksums
-└── latest -> 20240101_120000/ # Symlink to latest backup
-```
+Backups include:
+- PostgreSQL database
+- N8N workflows & credentials
+- Redis cache
+- Configuration files
+  (Secrets are intentionally excluded; back up the `secrets/` directory separately and securely)
 
 ### Recovery Process
 
 ```bash
-# 1. Stop all services
+# Stop services
 docker compose down
 
-# 2. Navigate to backup directory
-cd backups/latest
+# Locate backup
+BACKUP_DIR=$(ls -t volumes/backups | head -1)
+cd volumes/backups/$BACKUP_DIR
 
-# 3. Decrypt and restore database
-age -d -i ../../secrets/age-key.txt postgresql.sql.age | \
-  docker compose exec -T postgres psql -U postgres -d n8n
+# Restore database
+age -d -i ../../secrets/age-key.txt postgres_backup.dump.age > /tmp/postgres_backup.dump
+docker cp /tmp/postgres_backup.dump $(docker compose ps -q postgres):/tmp/postgres_backup.dump
+docker compose exec -T postgres pg_restore -U <POSTGRES_USER> -d <POSTGRES_DB> -c -v /tmp/postgres_backup.dump
 
-# 4. Decrypt and restore N8N data
-age -d -i ../../secrets/age-key.txt n8n_data.tar.age > /tmp/n8n_data.tar
-docker compose exec -T n8n sh -c "rm -rf /home/node/.n8n/*"
-docker cp /tmp/n8n_data.tar $(docker compose ps -q n8n):/tmp/n8n_data.tar
-docker compose exec -T n8n sh -c "tar -xf /tmp/n8n_data.tar -C /home/node && rm -f /tmp/n8n_data.tar && chown -R 1000:1000 /home/node/.n8n"
+# Restore N8N data
+age -d -i ../../secrets/age-key.txt n8n_data.tar.age | \
+  docker compose exec -T n8n tar -xf - -C /home/node
 
-# 5. Decrypt and restore Redis data
-age -d -i ../../secrets/age-key.txt redis_data.tar.age | \
-  tar -xf - -C ../../volumes/redis/
+# Restore Redis
+age -d -i ../../secrets/age-key.txt redis_backup.rdb.age > /tmp/dump.rdb
+docker cp /tmp/dump.rdb $(docker compose ps -q redis):/data/dump.rdb
+docker compose restart redis
 
-# 6. Restart services and verify
+# Restart services
 docker compose up -d
 ./scripts/health-check.sh
 ```
 
-### Backup Verification
-
-```bash
-# Verify backup integrity
-./scripts/backup.sh --verify
-
-# List available backups
-ls -la backups/
-
-# Check backup metadata
-cat backups/latest/backup_metadata.json | jq .
-```
-
 ## 🔧 Troubleshooting
 
-### Service Issues
+### Common Issues
 
+**Services not starting**
 ```bash
-# Check all services
-./scripts/health-check.sh
+# Check logs
+docker compose logs <service>
 
-# View specific logs
-docker compose logs <service-name>
-
-# Validate network configuration
-./scripts/validate-infrastructure.sh network
-docker network inspect n8n-backend
+# Validate configuration
+./scripts/validate-infrastructure.sh
 ```
 
-### Permission Issues
-
+**Permission denied errors**
 ```bash
-# Fix project ownership
-sudo chown -R $USER:$USER /path/to/project
-
-# Fix Docker volumes
-sudo chown -R 70:70 volumes/postgres    # PostgreSQL
-sudo chown -R 1000:1000 volumes/n8n     # N8N
-chmod 600 secrets/*.txt                 # Secrets
-
-# Check logs in fallback locations
-~/.n8n-scripts.log or /tmp/n8n-scripts-*.log
+# Fix ownership
+sudo chown -R $USER:$USER .
+chmod 600 secrets/*.txt
 ```
 
-### SSL/HTTPS Issues
-
+**SSL certificate issues**
 ```bash
-# Check SSL certificate status
-./scripts/health-check.sh
-
-# Verify SSL files and permissions
-ls -la nginx/ssl/
-chmod 600 nginx/ssl/key.pem
-chmod 644 nginx/ssl/fullchain.pem nginx/ssl/dhparam.pem
-
-# Test certificate
+# Verify certificates
 openssl x509 -in nginx/ssl/fullchain.pem -text -noout
+
+# Check permissions
+ls -la nginx/ssl/
+```
+
+**AppArmor blocking operations**
+```bash
+# If you see: "write /proc/thread-self/attr/apparmor/exec: no such file"
+sudo ./scripts/setup-apparmor.sh
+# Reboot if requested, then re-run
+```
+
+### Log Locations
+
+- **Service logs**: `docker compose logs <service>`
+- **Script logs**: `~/.n8n-scripts.log` or `/tmp/n8n-scripts-*.log`
+- **Security events**: `journalctl -f | grep apparmor`
+
+## 📁 Project Structure
+
+```
+h2g2/
+├── compose.yml                 # Core services
+├── compose.prod.yml            # Production overrides (monitoring stack)
+├── env.example                 # Example environment file
+├── nginx/
+│   ├── nginx.conf              # Web server config
+│   ├── conf.d/                 # Site configs
+│   │   ├── n8n.conf
+│   │   └── monitoring.conf
+│   └── ssl/                    # SSL certificates (place fullchain.pem, key.pem)
+├── monitoring/                 # Prometheus, Grafana, Loki, Alertmanager, Promtail
+│   ├── prometheus/
+│   ├── grafana/
+│   ├── loki/
+│   ├── promtail/
+│   └── alertmanager/
+├── security/                   # Security profiles
+│   ├── apparmor-profiles/
+│   └── seccomp-profile.json
+├── scripts/                    # Management utilities
+│   ├── *.sh
+│   └── lib/
+└── volumes/                    # Persistent data (created at runtime)
+    └── backups/                # Encrypted backups created by backup script
+```
+
+## 📚 Script Reference
+
+### Core Setup Scripts
+
+```bash
+# Install Docker and system dependencies
+./scripts/install-dependencies.sh
+
+# Generate secrets and create SSL directory structure
+./scripts/generate-secrets.sh
+./scripts/generate-secrets.sh --force  # Force regenerate all
+
+# Validate system before deployment
+./scripts/validate-infrastructure.sh
+./scripts/validate-infrastructure.sh network  # Check specific component (network, secrets etc.)
+```
+
+### Security Scripts
+
+```bash
+# Setup AppArmor profiles (requires root)
+sudo ./scripts/setup-apparmor.sh
+
+# Reload AppArmor profiles manually (requires root)
+sudo ./scripts/load-apparmor-profiles.sh
+
+# Complete security hardening (requires root)
+sudo ./scripts/setup-security.sh
+sudo ./scripts/setup-security.sh --docker-daemon  # Docker daemon only
+
+# Network security and firewall (requires root)
+sudo ./scripts/network-security.sh
+
+# Validate security deployment
+./scripts/validate-deployment.sh
+```
+
+### Operations Scripts
+
+```bash
+# Health monitoring
+./scripts/health-check.sh
+
+# Backup management
+./scripts/backup.sh
+BACKUP_RETENTION_DAYS=30 ./scripts/backup.sh  # Custom retention
+
+# Update services with rollback capability
+./scripts/update.sh
 ```
 
 ---
 
-**⚠️ Security Notice**: Regular monitoring with `./scripts/health-check.sh` and updates via `./scripts/update.sh` are essential for production security.
+**⚠️ Production Note**: Always run `health-check.sh` after changes and maintain regular backups.

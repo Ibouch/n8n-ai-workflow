@@ -366,6 +366,23 @@ validate_security_configuration() {
         fi
     fi
     
+    # Validate AppArmor environment when available
+    if command -v aa-status >/dev/null 2>&1; then
+        if systemctl is-active apparmor >/dev/null 2>&1; then
+            log_success "AppArmor service is active"
+        else
+            warn "AppArmor service not active"
+        fi
+
+        if [ -f /proc/thread-self/attr/apparmor/exec ]; then
+            log_success "AppArmor profile interface available"
+        else
+            warn "AppArmor profile interface not available: run sudo ./scripts/setup-apparmor.sh"
+        fi
+    else
+        log_debug "AppArmor tools not found; skipping AppArmor validation"
+    fi
+
     # Check Docker daemon security configuration (optional)
     local docker_config="/etc/docker/daemon.json"
     if [ -f "$docker_config" ]; then
@@ -373,6 +390,13 @@ validate_security_configuration() {
             log_success "Docker daemon has no-new-privileges enabled"
         else
             log_info "Docker daemon security: Consider enabling no-new-privileges in $docker_config"
+            log_info "  Run: sudo ./scripts/setup-security.sh --docker-daemon"
+        fi
+
+        if grep -q '"seccomp-profile"' "$docker_config"; then
+            log_success "Docker daemon seccomp-profile configured"
+        else
+            log_info "Docker daemon security: Consider setting a seccomp-profile in $docker_config"
             log_info "  Run: sudo ./scripts/setup-security.sh --docker-daemon"
         fi
     else

@@ -85,57 +85,7 @@ configure_firewall_rules() {
 
 configure_firewall_rules
 
-# 2. Configure Docker daemon for enhanced security
-configure_docker_security() {
-    log_info "Configuring Docker daemon security..."
-    
-    local docker_config="/etc/docker/daemon.json"
-    local seccomp_profile="${PROJECT_ROOT}/security/seccomp-profile.json"
-    
-    # Create backup of existing configuration
-    if [ -f "$docker_config" ]; then
-        backup_file "$docker_config"
-    fi
-    
-    # Ensure Docker config directory exists
-    create_dir_safe "/etc/docker" 755
-    
-    # Create enhanced Docker daemon configuration
-    cat > "$docker_config" << EOF
-{
-  "icc": false,
-  "iptables": true,
-  "ip-forward": true,
-  "ip-masq": true,
-  "userland-proxy": false,
-  "no-new-privileges": true,
-  "seccomp-profile": "${seccomp_profile}",
-  "log-driver": "json-file",
-  "log-opts": {
-    "max-size": "10m",
-    "max-file": "3"
-  },
-  "live-restore": true,
-  "default-ulimits": {
-    "nofile": {
-      "Name": "nofile",
-      "Hard": 64000,
-      "Soft": 64000
-    }
-  },
-  "storage-driver": "overlay2",
-  "storage-opts": [
-    "overlay2.override_kernel_check=true"
-  ]
-}
-EOF
-
-    log_success "Docker daemon configuration created"
-}
-
-configure_docker_security
-
-## Seccomp profile is managed via security/seccomp-profile.json and compose files
+# Seccomp profile is managed via security/seccomp-profile.json and compose files
 
 # 4. Create network monitoring script
 log "Creating network monitoring script..."
@@ -210,44 +160,13 @@ systemctl daemon-reload
 systemctl enable n8n-network-monitor.timer
 systemctl start n8n-network-monitor.timer
 
-# 6. Restart Docker with new configuration
-restart_docker_safely() {
-    log_info "Restarting Docker daemon with new security configuration..."
-    
-    if systemctl is-active --quiet docker; then
-        log_info "Stopping Docker daemon..."
-        systemctl stop docker
-        sleep 2
-    fi
-    
-    log_info "Starting Docker daemon with new configuration..."
-    if systemctl start docker; then
-        log_success "Docker daemon restarted successfully"
-        
-        # Wait for Docker to be fully ready
-        sleep 5
-        
-        # Verify Docker is working
-        if docker info >/dev/null 2>&1; then
-            log_success "Docker is operational with new configuration"
-        else
-            warn "Docker started but may not be fully operational yet"
-        fi
-    else
-        error_exit "Failed to restart Docker daemon"
-    fi
-}
-
-restart_docker_safely
+## Docker daemon security is configured via scripts/setup-security.sh
 
 # Final summary
 log_success "Network security configuration completed!"
 log_info "Security measures implemented:"
 log_info "  ${CHECKMARK} Docker-compatible firewall rules"
-log_info "  ${CHECKMARK} Docker daemon hardening"
-log_info "  ${CHECKMARK} Custom seccomp profiles"
 log_info "  ${CHECKMARK} Network monitoring and alerting"
-log_info "  ${CHECKMARK} Enhanced logging configuration"
 
 warn "IMPORTANT: Please verify that your applications still function correctly"
 warn "Monitor network monitoring logs at: /var/log/n8n-network-monitor.log"
