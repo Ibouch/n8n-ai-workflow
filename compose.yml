@@ -95,9 +95,7 @@ services:
     secrets:
       - source: postgres_password
         target: /run/secrets/postgres_password
-        uid: "999"
-        gid: "999"
-        mode: 0400
+        mode: 0444
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts/postgres-init:/docker-entrypoint-initdb.d:ro
@@ -307,9 +305,7 @@ services:
     secrets:
       - source: redis_password
         target: /run/secrets/redis_password
-        uid: "999"
-        gid: "999"
-        mode: 0400
+        mode: 0444
     volumes:
       - redis_data:/data
     networks:

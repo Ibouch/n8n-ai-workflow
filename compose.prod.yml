@@ -224,9 +224,7 @@ services:
     secrets:
       - source: grafana_password
         target: /run/secrets/grafana_password
-        uid: "472"
-        gid: "472"
-        mode: 0400
+        mode: 0444
     volumes:
       - grafana_data:/var/lib/grafana
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
@@ -328,9 +326,7 @@ services:
     secrets:
       - source: smtp_password
         target: /run/secrets/smtp_password
-        uid: "65534"
-        gid: "65534"
-        mode: 0400
+        mode: 0444
     volumes:
       - ./monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
       - alertmanager_data:/alertmanager
@@ -365,9 +361,7 @@ services:
     secrets:
       - source: postgres_password
         target: /run/secrets/postgres_password
-        uid: "65534"
-        gid: "65534"
-        mode: 0400
+        mode: 0444
     volumes:
       - ./monitoring/postgres-exporter:/etc/postgres_exporter:ro
     networks:
@@ -403,9 +397,7 @@ services:
     secrets:
       - source: redis_password
         target: /run/secrets/redis_password
-        uid: "59000"
-        gid: "59000"
-        mode: 0400
+        mode: 0444
     networks:
       - n8n-backend
     depends_on:
