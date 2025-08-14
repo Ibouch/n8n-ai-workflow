@@ -222,7 +222,11 @@ services:
       - GF_USERS_DEFAULT_THEME=dark
       - GF_FEATURE_TOGGLES_ENABLE=publicDashboards
     secrets:
-      - grafana_password
+      - source: grafana_password
+        target: /run/secrets/grafana_password
+        uid: "472"
+        gid: "472"
+        mode: 0400
     volumes:
       - grafana_data:/var/lib/grafana
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
@@ -322,7 +326,11 @@ services:
       - '--web.route-prefix=/'
       - '--data.retention=168h'
     secrets:
-      - smtp_password
+      - source: smtp_password
+        target: /run/secrets/smtp_password
+        uid: "65534"
+        gid: "65534"
+        mode: 0400
     volumes:
       - ./monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
       - alertmanager_data:/alertmanager
@@ -355,7 +363,11 @@ services:
       - DATA_SOURCE_PASS_FILE=/run/secrets/postgres_password
       - PG_EXPORTER_EXTEND_QUERY_PATH=/etc/postgres_exporter/queries.yaml
     secrets:
-      - postgres_password
+      - source: postgres_password
+        target: /run/secrets/postgres_password
+        uid: "65534"
+        gid: "65534"
+        mode: 0400
     volumes:
       - ./monitoring/postgres-exporter:/etc/postgres_exporter:ro
     networks:
@@ -389,7 +401,11 @@ services:
       - REDIS_PASSWORD_FILE=/run/secrets/redis_password
       - REDIS_EXPORTER_LOG_FORMAT=json
     secrets:
-      - redis_password
+      - source: redis_password
+        target: /run/secrets/redis_password
+        uid: "59000"
+        gid: "59000"
+        mode: 0400
     networks:
       - n8n-backend
     depends_on:
