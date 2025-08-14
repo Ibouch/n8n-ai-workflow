@@ -107,51 +107,6 @@ else
     log_info "Diffie-Hellman parameters already exist"
 fi
 
-# Create placeholder for SSL certificates with instructions
-if [ ! -f "${SSL_DIR}/README.md" ] || [ "$FORCE_REGENERATE" = true ]; then
-    cat > "${SSL_DIR}/README.md" << 'EOF'
-# SSL Certificate Setup
-
-This directory should contain your SSL certificates for HTTPS access.
-
-## Required Files
-
-- `fullchain.pem` - Certificate chain (certificate + intermediate certificates)
-- `key.pem` - Private key
-- `dhparam.pem` - Diffie-Hellman parameters (automatically generated)
-
-## Certificate Sources
-
-### Let's Encrypt (Recommended)
-```bash
-# Install certbot
-sudo apt install certbot
-
-# Generate certificate
-sudo certbot certonly --standalone -d yourdomain.com
-
-# Copy certificates
-sudo cp /etc/letsencrypt/live/yourdomain.com/fullchain.pem nginx/ssl/
-sudo cp /etc/letsencrypt/live/yourdomain.com/privkey.pem nginx/ssl/key.pem
-sudo chown $USER:$USER nginx/ssl/*.pem
-```
-
-### Self-Signed (Development Only)
-```bash
-# Generate self-signed certificate (valid for 365 days)
-openssl req -x509 -newkey rsa:4096 -keyout nginx/ssl/key.pem -out nginx/ssl/fullchain.pem -days 365 -nodes -subj "/CN=localhost"
-```
-
-## Security Notes
-
-- Keep private keys secure (600 permissions)
-- Use strong certificates (RSA 2048+ or ECDSA)
-- Regularly renew certificates before expiration
-- Monitor certificate expiration with health checks
-EOF
-    log_success "Created SSL setup instructions"
-fi
-
 # Set proper permissions (portable across GNU/BSD)
 find "${SECRETS_DIR}" -type f -name "*.txt" -exec chmod 600 {} +
 chmod 700 "${SECRETS_DIR}"
@@ -178,15 +133,11 @@ else
     echo "  ${CROSS} dhparam.pem (generation failed)"
 fi
 
-if [ -f "${SSL_DIR}/README.md" ]; then
-    echo "  ${CHECKMARK} README.md (SSL setup instructions)"
-fi
-
 # Check for actual SSL certificates
 if [ -f "${SSL_DIR}/fullchain.pem" ] && [ -f "${SSL_DIR}/key.pem" ]; then
     echo "  ${CHECKMARK} SSL certificates present"
 else
-    echo "  ${WARNING} SSL certificates not found - see ${SSL_DIR}/README.md"
+    echo "  ${WARNING} SSL certificates not found"
 fi
 
 echo ""
@@ -195,7 +146,7 @@ echo "1. Keep these secrets secure and never commit them to version control"
 echo "2. Use encrypted storage for backups containing these secrets"
 echo "3. Rotate secrets regularly (recommended: every 90 days)"
 echo "4. Use different secrets for different environments"
-echo "5. Generate SSL certificates before starting services (see nginx/ssl/README.md)"
+echo "5. Generate SSL certificates before starting services"
 echo "6. Monitor SSL certificate expiration and renew before expiry"
 if is_age_available; then
     echo "7. Store the age private key (age-key.txt) in a secure location separate from backups"
