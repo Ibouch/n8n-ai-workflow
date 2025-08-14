@@ -7,9 +7,9 @@ profile n8n_postgres_profile flags=(attach_disconnected,mediate_deleted) {
   #include <abstractions/nameservice>
   #include <abstractions/shells>
 
-  # Network access
-  network inet tcp,
-  network inet6 tcp,
+  # Network access (use socket types)
+  network inet stream,
+  network inet6 stream,
 
   # File system access
   / r,

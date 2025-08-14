@@ -7,11 +7,11 @@ profile n8n_redis_profile flags=(attach_disconnected,mediate_deleted) {
   #include <abstractions/nameservice>
   #include <abstractions/shells>
 
-  # Network access
-  network inet tcp,
-  network inet udp,
-  network inet6 tcp,
-  network inet6 udp,
+  # Network access (AppArmor expects socket types, not protocols)
+  network inet stream,
+  network inet dgram,
+  network inet6 stream,
+  network inet6 dgram,
 
   # File system access
   / r,

@@ -8,11 +8,11 @@ profile n8n_app_profile flags=(attach_disconnected,mediate_deleted) {
   #include <abstractions/openssl>
   #include <abstractions/ssl_certs>
 
-  # Network access
-  network inet tcp,
-  network inet udp,
-  network inet6 tcp,
-  network inet6 udp,
+  # Network access (use socket types)
+  network inet stream,
+  network inet dgram,
+  network inet6 stream,
+  network inet6 dgram,
 
   # File system access
   / r,
