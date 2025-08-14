@@ -12,6 +12,7 @@ profile n8n_nginx_profile flags=(attach_disconnected,mediate_deleted) {
   # File system access
   / r,
   /bin/** mr,
+  /sbin/** mr,
   /lib/** mr,
   /lib64/** mr,
   /usr/** mr,
@@ -27,6 +28,10 @@ profile n8n_nginx_profile flags=(attach_disconnected,mediate_deleted) {
 
   # Nginx binary
   /usr/sbin/nginx ix,
+  /bin/** ix,
+  /sbin/** ix,
+  /usr/bin/** ix,
+  /usr/sbin/** ix,
   /docker-entrypoint.sh ix,
   /usr/local/bin/docker-entrypoint.sh ix,
   /docker-entrypoint.d/** r,
