@@ -30,6 +30,9 @@ profile n8n_nginx_profile flags=(attach_disconnected,mediate_deleted) {
 
   # Nginx binary
   /usr/sbin/nginx ix,
+  /docker-entrypoint.sh rix,
+  /usr/local/bin/docker-entrypoint.sh rix,
+  /docker-entrypoint.d/** r,
 
   # Deny dangerous operations
   deny @{PROC}/sys/kernel/** w,

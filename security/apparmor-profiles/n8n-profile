@@ -37,6 +37,11 @@ profile n8n_app_profile flags=(attach_disconnected,mediate_deleted) {
   /usr/local/bin/node ix,
   /usr/local/lib/node_modules/** r,
 
+  # Docker entrypoint and init scripts
+  /docker-entrypoint.sh rix,
+  /usr/local/bin/docker-entrypoint.sh rix,
+  /docker-entrypoint.d/** r,
+
   # Deny dangerous operations
   deny @{PROC}/sys/kernel/** w,
   deny /sys/module/apparmor/parameters/enabled w,
@@ -53,11 +58,10 @@ profile n8n_app_profile flags=(attach_disconnected,mediate_deleted) {
   deny capability sys_module,
   deny capability sys_rawio,
   deny capability sys_time,
-  deny capability setuid,
-  deny capability setgid,
-  deny capability chown,
-  deny capability dac_override,
-  deny capability fowner,
+  # Allow minimal caps for runtime where Node may need to write logs and adjust ownership within its volume
+  capability chown,
+  capability dac_override,
+  capability fowner,
   deny capability fsetid,
   deny capability kill,
   deny capability net_admin,

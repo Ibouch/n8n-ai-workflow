@@ -69,7 +69,7 @@ services:
   # PostgreSQL - Primary database for N8N workflows and user data
   postgres:
     <<: *hardening
-    image: postgres:alpine
+    image: postgres:latest
     container_name: n8n-postgres
     restart: unless-stopped
     security_opt:
@@ -85,8 +85,8 @@ services:
       - SETGID
       - SETUID
     tmpfs:
-      - /tmp:noexec,nosuid,size=100m
-      - /var/run/postgresql:noexec,nosuid,size=100m
+      - /tmp:nosuid,size=100m
+      - /var/run/postgresql:nosuid,size=100m
       - /dev/shm:size=512m
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-n8n_admin}
@@ -94,7 +94,9 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-n8n}
       - POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256 --auth-local=scram-sha-256 --data-checksums
     secrets:
-      - postgres_password
+      - source: postgres_password
+        target: /run/secrets/postgres_password
+        mode: 0400
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts/postgres-init:/docker-entrypoint-initdb.d:ro
@@ -120,7 +122,7 @@ services:
     image: n8nio/n8n:latest
     container_name: n8n-app
     restart: unless-stopped
-    user: "1000:1000"
+    # run as root for entrypoint; n8n drops privileges internally if configured
     security_opt:
       - no-new-privileges:true
       - apparmor:n8n_app_profile
@@ -188,11 +190,31 @@ services:
       - GENERIC_TIMEZONE=${GENERIC_TIMEZONE:-UTC}
       - TZ=${GENERIC_TIMEZONE:-UTC}
     secrets:
-      - postgres_password
-      - n8n_password
-      - n8n_encryption_key
-      - smtp_password
-      - redis_password
+      - source: postgres_password
+        target: /run/secrets/postgres_password
+        uid: "1000"
+        gid: "1000"
+        mode: 0400
+      - source: n8n_password
+        target: /run/secrets/n8n_password
+        uid: "1000"
+        gid: "1000"
+        mode: 0400
+      - source: n8n_encryption_key
+        target: /run/secrets/n8n_encryption_key
+        uid: "1000"
+        gid: "1000"
+        mode: 0400
+      - source: smtp_password
+        target: /run/secrets/smtp_password
+        uid: "1000"
+        gid: "1000"
+        mode: 0400
+      - source: redis_password
+        target: /run/secrets/redis_password
+        uid: "1000"
+        gid: "1000"
+        mode: 0400
     volumes:
       - n8n_data:/home/node/.n8n
       - ./custom-nodes:/home/node/.n8n/custom:ro
@@ -216,10 +238,10 @@ services:
   # Nginx - Reverse proxy with TLS termination and security headers
   nginx:
     <<: *hardening
-    image: nginx:alpine
+    image: nginx:latest
     container_name: n8n-nginx
     restart: unless-stopped
-    user: "101:101"
+    # run as root for entrypoint; nginx master will drop privileges per nginx.conf
     security_opt:
       - no-new-privileges:true
       - apparmor:n8n_nginx_profile
@@ -263,7 +285,7 @@ services:
   # Redis - In-memory cache and N8N queue backend
   redis:
     <<: *hardening
-    image: redis:alpine
+    image: redis:latest
     container_name: n8n-redis
     restart: unless-stopped
     security_opt:
@@ -278,14 +300,16 @@ services:
       - SETGID
       - SETUID
     tmpfs:
-      - /tmp:noexec,nosuid,size=100m
-      - /etc/redis:noexec,nosuid,size=10m
+      - /tmp:nosuid,size=100m
+      - /etc/redis:nosuid,size=10m
     command: >
       sh -c 'printf "requirepass %s\nmaxmemory 512mb\nmaxmemory-policy allkeys-lru\nsave 60 1000\nappendonly yes\ntcp-keepalive 300\ntimeout 0\n" 
       "$$(cat /run/secrets/redis_password)" > /etc/redis/redis.conf &&
       exec redis-server /etc/redis/redis.conf'
     secrets:
-      - redis_password
+      - source: redis_password
+        target: /run/secrets/redis_password
+        mode: 0400
     volumes:
       - redis_data:/data
     networks:
@@ -333,16 +357,12 @@ networks:
 volumes:
   postgres_data:
     driver: local
-  
   n8n_data:
     driver: local
-  
   redis_data:
     driver: local
-  
   nginx_logs:
     driver: local
-  
   logs:
     driver: local
 
@@ -352,13 +372,11 @@ volumes:
 secrets:
   postgres_password:
     file: ./secrets/postgres_password.txt
-  
   n8n_password:
     file: ./secrets/n8n_password.txt
   n8n_encryption_key:
     file: ./secrets/n8n_encryption_key.txt
   smtp_password:
     file: ./secrets/smtp_password.txt
-  
   redis_password:
     file: ./secrets/redis_password.txt

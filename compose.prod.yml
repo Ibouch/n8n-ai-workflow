@@ -50,8 +50,6 @@ services:
   # ==============================================================================
   
   postgres:
-    environment:
-      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256 --data-checksums"
     command: >
       postgres
       -c shared_buffers=512MB
@@ -486,23 +484,7 @@ volumes:
     driver: local
   alertmanager_data:
     driver: local
-  logs:
-    driver: local
 
 secrets:
-  postgres_password:
-    file: ./secrets/postgres_password.txt
-  
-  n8n_password:
-    file: ./secrets/n8n_password.txt
-  n8n_encryption_key:
-    file: ./secrets/n8n_encryption_key.txt
-  
-  redis_password:
-    file: ./secrets/redis_password.txt
-  
-  smtp_password:
-    file: ./secrets/smtp_password.txt
-  
   grafana_password:
     file: ./secrets/grafana_password.txt
