@@ -18,7 +18,6 @@
 
 # Security hardening baseline applied to all containers
 x-hardening: &hardening
-  read_only: true                                   # Immutable root filesystem
   security_opt:
     - no-new-privileges:true                        # Prevent privilege escalation
     - seccomp:./security/seccomp-profile.json       # Restrict system calls
@@ -72,6 +71,7 @@ services:
     image: postgres:latest
     container_name: n8n-postgres
     restart: unless-stopped
+    user: "999:999"  # Standard postgres user
     security_opt:
       - no-new-privileges:true
       - seccomp:./security/seccomp-profile.json
@@ -95,7 +95,9 @@ services:
     secrets:
       - source: postgres_password
         target: /run/secrets/postgres_password
-        mode: 0444
+        uid: "999"
+        gid: "999"
+        mode: 0440
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts/postgres-init:/docker-entrypoint-initdb.d:ro
@@ -121,7 +123,7 @@ services:
     image: n8nio/n8n:latest
     container_name: n8n-app
     restart: unless-stopped
-    # run as root for entrypoint; n8n drops privileges internally if configured
+    user: "1000:1000"  # n8n user
     security_opt:
       - no-new-privileges:true
       - seccomp:./security/seccomp-profile.json
@@ -239,7 +241,7 @@ services:
     image: nginx:latest
     container_name: n8n-nginx
     restart: unless-stopped
-    # run as root for entrypoint; nginx master will drop privileges per nginx.conf
+    user: "101:101"  # nginx user
     security_opt:
       - no-new-privileges:true
       - seccomp:./security/seccomp-profile.json
@@ -285,6 +287,7 @@ services:
     image: redis:latest
     container_name: n8n-redis
     restart: unless-stopped
+    user: "999:999"  # redis user
     security_opt:
       - no-new-privileges:true
       - seccomp:./security/seccomp-profile.json
@@ -297,21 +300,33 @@ services:
       - SETUID
     tmpfs:
       - /tmp:nosuid,size=100m
-      - /etc/redis:nosuid,size=10m
     command: >
-      sh -c 'printf "requirepass %s\nmaxmemory 512mb\nmaxmemory-policy allkeys-lru\nsave 60 1000\nappendonly yes\ntcp-keepalive 300\ntimeout 0\n" 
-      "$$(cat /run/secrets/redis_password)" > /etc/redis/redis.conf &&
-      exec redis-server /etc/redis/redis.conf'
+      sh -c '
+      REDIS_PASS="$$(cat /run/secrets/redis_password | tr -d "\n")"
+      && if [ -z "$$REDIS_PASS" ]; then echo "Error: Redis password is empty" >&2; exit 1; fi
+      && cat > /tmp/redis.conf << EOF
+      requirepass "$$REDIS_PASS"
+      maxmemory 512mb
+      maxmemory-policy allkeys-lru
+      save 60 1000
+      appendonly yes
+      tcp-keepalive 300
+      timeout 0
+      dir /data
+      EOF
+      && exec redis-server /tmp/redis.conf'
     secrets:
       - source: redis_password
         target: /run/secrets/redis_password
-        mode: 0444
+        uid: "999"
+        gid: "999"
+        mode: 0440
     volumes:
       - redis_data:/data
     networks:
       - n8n-backend
     healthcheck:
-      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$(cat /run/secrets/redis_password)\" redis-cli ping | grep -q PONG"]
+      test: ["CMD-SHELL", "redis-cli --pass \"$$(cat /run/secrets/redis_password | tr -d '\\n')\" ping | grep -q PONG"]
       interval: 20s
       timeout: 5s
       retries: 3

@@ -40,37 +40,37 @@ fi
 
 # PostgreSQL secrets
 if [ ! -f "${SECRETS_DIR}/postgres_password.txt" ] || [ "$FORCE_REGENERATE" = true ]; then
-    generate_password 32 > "${SECRETS_DIR}/postgres_password.txt"
+    printf '%s' "$(generate_password 32)" > "${SECRETS_DIR}/postgres_password.txt"
     log_success "Generated PostgreSQL password"
 fi
 
 # N8N authentication secrets
 
 if [ ! -f "${SECRETS_DIR}/n8n_password.txt" ] || [ "$FORCE_REGENERATE" = true ]; then
-    generate_password 24 > "${SECRETS_DIR}/n8n_password.txt"
+    printf '%s' "$(generate_password 24)" > "${SECRETS_DIR}/n8n_password.txt"
     log_success "Generated N8N password"
 fi
 
 if [ ! -f "${SECRETS_DIR}/n8n_encryption_key.txt" ] || [ "$FORCE_REGENERATE" = true ]; then
-    generate_secure_string 32 > "${SECRETS_DIR}/n8n_encryption_key.txt"
+    printf '%s' "$(generate_secure_string 32)" > "${SECRETS_DIR}/n8n_encryption_key.txt"
     log_success "Generated N8N encryption key"
 fi
 
 # Redis secrets
 if [ ! -f "${SECRETS_DIR}/redis_password.txt" ] || [ "$FORCE_REGENERATE" = true ]; then
-    generate_password 32 > "${SECRETS_DIR}/redis_password.txt"
+    printf '%s' "$(generate_password 32)" > "${SECRETS_DIR}/redis_password.txt"
     log_success "Generated Redis password"
 fi
 
 # Grafana authentication secrets
 if [ ! -f "${SECRETS_DIR}/grafana_password.txt" ] || [ "$FORCE_REGENERATE" = true ]; then
-    generate_password 24 > "${SECRETS_DIR}/grafana_password.txt"
+    printf '%s' "$(generate_password 24)" > "${SECRETS_DIR}/grafana_password.txt"
     log_success "Generated Grafana password"
 fi
 
 # SMTP password
 if [ ! -f "${SECRETS_DIR}/smtp_password.txt" ] || [ "$FORCE_REGENERATE" = true ]; then
-    generate_password 24 > "${SECRETS_DIR}/smtp_password.txt"
+    printf '%s' "$(generate_password 24)" > "${SECRETS_DIR}/smtp_password.txt"
     log_success "Generated SMTP password"
 fi
 
@@ -82,7 +82,7 @@ if is_age_available; then
     fi
     
     if [ ! -f "${SECRETS_DIR}/age-recipients.txt" ] || [ "$FORCE_REGENERATE" = true ]; then
-        age-keygen -y "${SECRETS_DIR}/age-key.txt" > "${SECRETS_DIR}/age-recipients.txt"
+        printf '%s' "$(age-keygen -y "${SECRETS_DIR}/age-key.txt")" > "${SECRETS_DIR}/age-recipients.txt"
         log_success "Generated age recipients file"
     fi
 else

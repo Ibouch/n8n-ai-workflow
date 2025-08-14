@@ -164,13 +164,14 @@ services:
     container_name: n8n-prometheus
     restart: unless-stopped
     user: "65534:65534"
-    read_only: true
     security_opt:
       - no-new-privileges:true
       - seccomp:./security/seccomp-profile.json
     cap_drop:
       - ALL
-    tmpfs: *monitoring-tmpfs
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
+      - /prometheus/.tmp:noexec,nosuid,size=100m
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
@@ -201,7 +202,6 @@ services:
     container_name: n8n-grafana
     restart: unless-stopped
     user: "472:472"
-    read_only: true
     security_opt:
       - no-new-privileges:true
       - seccomp:./security/seccomp-profile.json
@@ -210,7 +210,6 @@ services:
     tmpfs:
       - /tmp:noexec,nosuid,size=100m
       - /var/lib/grafana/plugins:noexec,nosuid,size=200m
-      - /etc/grafana:noexec,nosuid,size=10m
     environment:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
       - GF_SECURITY_ADMIN_PASSWORD_FILE=/run/secrets/grafana_password
@@ -224,7 +223,9 @@ services:
     secrets:
       - source: grafana_password
         target: /run/secrets/grafana_password
-        mode: 0444
+        uid: "472"
+        gid: "472"
+        mode: 0440
     volumes:
       - grafana_data:/var/lib/grafana
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
@@ -247,13 +248,15 @@ services:
     container_name: n8n-loki
     restart: unless-stopped
     user: "10001:10001"
-    read_only: true
     security_opt:
       - no-new-privileges:true
       - seccomp:./security/seccomp-profile.json
     cap_drop:
       - ALL
-    tmpfs: *monitoring-tmpfs
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
+      - /loki/wal:noexec,nosuid,size=200m
+      - /loki/chunks:noexec,nosuid,size=500m
     command: -config.file=/etc/loki/local-config.yaml
     volumes:
       - ./monitoring/loki/loki-config.yaml:/etc/loki/local-config.yaml:ro
@@ -280,7 +283,9 @@ services:
       - ALL
     cap_add:
       - DAC_OVERRIDE
-    tmpfs: *monitoring-tmpfs
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
+      - /tmp/positions:noexec,nosuid,size=10m
     volumes:
       - /var/log:/var/log:ro
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
@@ -303,13 +308,14 @@ services:
     container_name: n8n-alertmanager
     restart: unless-stopped
     user: "65534:65534"
-    read_only: true
     security_opt:
       - no-new-privileges:true
       - seccomp:./security/seccomp-profile.json
     cap_drop:
       - ALL
-    tmpfs: *monitoring-tmpfs
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
+      - /alertmanager/.tmp:noexec,nosuid,size=50m
     environment:
       - SMTP_HOST=${SMTP_HOST:-localhost}
       - SMTP_PORT=${SMTP_PORT:-587}
@@ -326,7 +332,9 @@ services:
     secrets:
       - source: smtp_password
         target: /run/secrets/smtp_password
-        mode: 0444
+        uid: "65534"
+        gid: "65534"
+        mode: 0440
     volumes:
       - ./monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
       - alertmanager_data:/alertmanager
@@ -346,13 +354,13 @@ services:
     container_name: n8n-postgres-exporter
     restart: unless-stopped
     user: "65534:65534"
-    read_only: true
     security_opt:
       - no-new-privileges:true
       - seccomp:./security/seccomp-profile.json
     cap_drop:
       - ALL
-    tmpfs: *monitoring-tmpfs
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
     environment:
       - DATA_SOURCE_URI=postgres:5432/${POSTGRES_DB:-n8n}?sslmode=disable
       - DATA_SOURCE_USER=${POSTGRES_USER:-n8n_admin}
@@ -361,7 +369,9 @@ services:
     secrets:
       - source: postgres_password
         target: /run/secrets/postgres_password
-        mode: 0444
+        uid: "65534"
+        gid: "65534"
+        mode: 0440
     volumes:
       - ./monitoring/postgres-exporter:/etc/postgres_exporter:ro
     networks:
@@ -383,13 +393,13 @@ services:
     container_name: n8n-redis-exporter
     restart: unless-stopped
     user: "59000:59000"
-    read_only: true
     security_opt:
       - no-new-privileges:true
       - seccomp:./security/seccomp-profile.json
     cap_drop:
       - ALL
-    tmpfs: *monitoring-tmpfs
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
     environment:
       - REDIS_ADDR=redis://redis:6379
       - REDIS_PASSWORD_FILE=/run/secrets/redis_password
@@ -397,7 +407,9 @@ services:
     secrets:
       - source: redis_password
         target: /run/secrets/redis_password
-        mode: 0444
+        uid: "59000"
+        gid: "59000"
+        mode: 0440
     networks:
       - n8n-backend
     depends_on:
@@ -417,13 +429,13 @@ services:
     container_name: n8n-node-exporter
     restart: unless-stopped
     user: "65534:65534"
-    read_only: true
     security_opt:
       - no-new-privileges:true
       - seccomp:./security/seccomp-profile.json
     cap_drop:
       - ALL
-    tmpfs: *monitoring-tmpfs
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
     command:
       - '--path.procfs=/host/proc'
       - '--path.rootfs=/rootfs'
@@ -450,14 +462,15 @@ services:
     image: gcr.io/cadvisor/cadvisor:latest
     container_name: n8n-cadvisor
     restart: unless-stopped
-    read_only: true
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
     cap_add:
       - SYS_ADMIN
-    tmpfs: *monitoring-tmpfs
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
+      - /var/lib/cadvisor:noexec,nosuid,size=100m
     command:
       - '--housekeeping_interval=30s'
       - '--docker_only=true'
@@ -496,3 +509,5 @@ volumes:
 secrets:
   grafana_password:
     file: ./secrets/grafana_password.txt
+  smtp_password:
+    file: ./secrets/smtp_password.txt
