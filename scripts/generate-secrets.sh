@@ -108,7 +108,7 @@ else
 fi
 
 # Set proper permissions (portable across GNU/BSD)
-find "${SECRETS_DIR}" -type f -name "*.txt" -exec chmod 600 {} +
+find "${SECRETS_DIR}" -type f -name "*.txt" -exec chmod 644 {} +
 chmod 700 "${SECRETS_DIR}"
 
 log_success "Secrets generation completed!"
