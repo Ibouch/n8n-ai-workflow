@@ -358,29 +358,6 @@ validate_security_configuration() {
         if [ ! -f "${security_dir}/seccomp-profile.json" ]; then
             warn "Seccomp profile not found"
         fi
-        
-        # Check for AppArmor profiles
-        local apparmor_dir="${security_dir}/apparmor-profiles"
-        if [ ! -d "$apparmor_dir" ]; then
-            warn "AppArmor profiles directory not found"
-        fi
-    fi
-    
-    # Validate AppArmor environment when available
-    if command -v aa-status >/dev/null 2>&1; then
-        if systemctl is-active apparmor >/dev/null 2>&1; then
-            log_success "AppArmor service is active"
-        else
-            warn "AppArmor service not active"
-        fi
-
-        if [ -f /proc/thread-self/attr/apparmor/exec ]; then
-            log_success "AppArmor profile interface available"
-        else
-            warn "AppArmor profile interface not available: run sudo ./scripts/setup-apparmor.sh"
-        fi
-    else
-        log_debug "AppArmor tools not found; skipping AppArmor validation"
     fi
 
     # Check Docker daemon security configuration (optional)

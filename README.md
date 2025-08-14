@@ -11,7 +11,7 @@
 ## Prerequisites
 
 - **Docker Engine** 20.10+ with Compose 2.0+
-- **Linux host** (required for AppArmor security profiles)
+- **Linux host**
 - **Domain name** with DNS pointing to your server
 - **SSL certificates** (Let's Encrypt recommended)
 
@@ -69,8 +69,8 @@ sudo chown $USER:$USER nginx/ssl/*.pem
 # Validate configuration
 ./scripts/validate-infrastructure.sh
 
-# Setup security profiles (requires reboot if AppArmor not enabled)
-sudo ./scripts/setup-apparmor.sh
+# Optional: configure additional host security (kernel params, auditd, fail2ban)
+sudo ./scripts/setup-security.sh --docker-daemon
 
 # Deploy services
 docker compose -f compose.yml -f compose.prod.yml up -d
@@ -89,25 +89,14 @@ docker compose -f compose.yml -f compose.prod.yml up -d
 | Layer | Implementation |
 |-------|---------------|
 | **Container Isolation** | Non-root users, read-only filesystems, minimal capabilities |
-| **Mandatory Access Control** | AppArmor profiles for all services |
+| **Mandatory Access Control** | Docker seccomp profile for all services |
 | **Network Segmentation** | DMZ (172.20.0.0/24) ↔ Internal (172.21.0.0/24) |
 | **Secrets Management** | Docker secrets with age encryption |
 | **SSL/TLS** | Force HTTPS, modern cipher suites, HSTS enabled |
 
-### AppArmor Profiles
+### Security Profiles
 
-Security profiles automatically load on boot via systemd:
-
-```bash
-# Check profile status
-sudo aa-status | grep n8n
-
-# Monitor security violations
-journalctl -f | grep apparmor
-
-# Manual reload if needed
-sudo ./scripts/load-apparmor-profiles.sh
-```
+Containers are restricted with Docker `seccomp` and `no-new-privileges`.
 
 ## 📊 Monitoring
 
@@ -242,18 +231,13 @@ openssl x509 -in nginx/ssl/fullchain.pem -text -noout
 ls -la nginx/ssl/
 ```
 
-**AppArmor blocking operations**
-```bash
-# If you see: "write /proc/thread-self/attr/apparmor/exec: no such file"
-sudo ./scripts/setup-apparmor.sh
-# Reboot if requested, then re-run
 ```
 
 ### Log Locations
 
 - **Service logs**: `docker compose logs <service>`
 - **Script logs**: `~/.n8n-scripts.log` or `/tmp/n8n-scripts-*.log`
-- **Security events**: `journalctl -f | grep apparmor`
+
 
 ## 📁 Project Structure
 
@@ -275,7 +259,6 @@ h2g2/
 │   ├── promtail/
 │   └── alertmanager/
 ├── security/                   # Security profiles
-│   ├── apparmor-profiles/
 │   └── seccomp-profile.json
 ├── scripts/                    # Management utilities
 │   ├── *.sh
@@ -304,12 +287,6 @@ h2g2/
 ### Security Scripts
 
 ```bash
-# Setup AppArmor profiles (requires root)
-sudo ./scripts/setup-apparmor.sh
-
-# Reload AppArmor profiles manually (requires root)
-sudo ./scripts/load-apparmor-profiles.sh
-
 # Complete security hardening (requires root)
 sudo ./scripts/setup-security.sh
 sudo ./scripts/setup-security.sh --docker-daemon  # Docker daemon only

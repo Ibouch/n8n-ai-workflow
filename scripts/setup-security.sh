@@ -1,6 +1,6 @@
 #!/bin/bash
 # Security Setup Script for N8N Infrastructure
-# Configures AppArmor profiles and additional security measures
+# Configures host-level security measures
 
 set -euo pipefail
 
@@ -125,14 +125,7 @@ if [ "$SETUP_DOCKER_DAEMON" = "true" ]; then
     exit 0
 fi
 
-## AppArmor is configured by scripts/setup-apparmor.sh
-log_info "Verifying AppArmor prerequisite..."
-if ! [ -f /proc/thread-self/attr/apparmor/exec ] || ! grep -q "apparmor=1" /proc/cmdline 2>/dev/null; then
-    warn "AppArmor not fully enabled on this host"
-    warn "Run: sudo ${SCRIPT_DIR}/setup-apparmor.sh"
-    warn "Then re-run this script."
-    exit 1
-fi
+ 
 
 # 3. Configure additional kernel security parameters
 log_info "Configuring kernel security parameters..."
@@ -205,9 +198,7 @@ if command -v auditctl >/dev/null 2>&1; then
 -w /etc/hosts -p wa -k hosts-file
 -w /etc/hostname -p wa -k hostname
 
-# AppArmor monitoring
--w /etc/apparmor/ -p wa -k apparmor
--w /sys/module/apparmor/ -p wa -k apparmor-module
+ 
 
 # Capability use monitoring
 -a always,exit -F arch=b64 -S capset -k capability-use
@@ -383,7 +374,6 @@ fi
 
 log_info "Security setup completed successfully!"
 log_info "Security measures implemented:"
-log_info "  ✅ AppArmor profiles for containers"
 log_info "  ✅ Kernel security parameters"
 log_info "  ✅ Audit rules for monitoring"
 log_info "  ✅ fail2ban protection"

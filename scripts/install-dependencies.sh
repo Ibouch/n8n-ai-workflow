@@ -9,7 +9,6 @@
 # Required tools for this project:
 #  - docker (daemon + CLI)
 #  - docker compose (docker compose)
-#  - apparmor-utils (Linux security)
 #  - auditd (Linux auditing)
 #  - fail2ban (web protection)
 #  - age (backup encryption)
@@ -58,10 +57,9 @@ install_debian() {
   clean_old_docker
 
   # Core tooling
-  apt_install ca-certificates curl wget openssl tar gzip coreutils findutils jq iproute2 net-tools lsof gnupg age apparmor-utils auditd fail2ban
+  apt_install ca-certificates curl wget openssl tar gzip coreutils findutils jq iproute2 net-tools lsof gnupg age auditd fail2ban
 
   # Enable security services
-  systemctl_enable_now apparmor
   systemctl_enable_now auditd
   systemctl_enable_now fail2ban
 

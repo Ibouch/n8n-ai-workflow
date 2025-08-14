@@ -74,7 +74,6 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
-      - apparmor:n8n_postgres_profile
       - seccomp:./security/seccomp-profile.json
     cap_drop:
       - ALL
@@ -125,7 +124,6 @@ services:
     # run as root for entrypoint; n8n drops privileges internally if configured
     security_opt:
       - no-new-privileges:true
-      - apparmor:n8n_app_profile
       - seccomp:./security/seccomp-profile.json
     tmpfs:
       - /tmp:noexec,nosuid,size=100m
@@ -244,7 +242,6 @@ services:
     # run as root for entrypoint; nginx master will drop privileges per nginx.conf
     security_opt:
       - no-new-privileges:true
-      - apparmor:n8n_nginx_profile
       - seccomp:./security/seccomp-profile.json
     cap_add:
       - CHOWN
@@ -290,7 +287,6 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
-      - apparmor:n8n_redis_profile
       - seccomp:./security/seccomp-profile.json
     cap_drop:
       - ALL
