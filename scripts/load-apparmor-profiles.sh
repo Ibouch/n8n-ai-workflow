@@ -130,10 +130,15 @@ for profile_name in "${!PROFILES[@]}"; do
         continue
     fi
     
-    # Validate profile syntax
-    if ! apparmor_parser -Q "$profile_file" >/dev/null 2>&1; then
+    # Validate profile syntax (show detailed parser output)
+    set +e
+    SYNTAX_OUTPUT=$(apparmor_parser -Q "$profile_file" 2>&1)
+    SYNTAX_STATUS=$?
+    set -e
+    if [ "$SYNTAX_STATUS" -ne 0 ]; then
         echo -e "${RED}${CROSS} INVALID SYNTAX${NC}"
-        log_error "Profile syntax validation failed: $profile_file"
+        echo "$SYNTAX_OUTPUT" | sed 's/^/  /'
+        log_error "Profile syntax validation failed: $profile_file\n$SYNTAX_OUTPUT"
         PROFILES_FAILED=$((PROFILES_FAILED + 1))
         continue
     fi
@@ -146,14 +151,19 @@ for profile_name in "${!PROFILES[@]}"; do
         continue
     fi
     
-    # Load the profile
-    if apparmor_parser -r "$system_file" >/dev/null 2>&1; then
+    # Load the profile (show detailed parser output)
+    set +e
+    LOAD_OUTPUT=$(apparmor_parser -r "$system_file" 2>&1)
+    LOAD_STATUS=$?
+    set -e
+    if [ "$LOAD_STATUS" -eq 0 ]; then
         echo -e "${GREEN}${CHECKMARK} LOADED${NC}"
         log_success "Profile loaded successfully: $profile_name"
         PROFILES_LOADED=$((PROFILES_LOADED + 1))
     else
         echo -e "${RED}${CROSS} LOAD FAILED${NC}"
-        log_error "Failed to load profile: $profile_name"
+        echo "$LOAD_OUTPUT" | sed 's/^/  /'
+        log_error "Failed to load profile: $profile_name\n$LOAD_OUTPUT"
         PROFILES_FAILED=$((PROFILES_FAILED + 1))
         # Remove the copied file if loading failed
         rm -f "$system_file"

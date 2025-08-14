@@ -2,11 +2,8 @@
 
 profile n8n_app_profile flags=(attach_disconnected,mediate_deleted) {
   #include <abstractions/base>
-  #include <abstractions/bash>
-  #include <abstractions/consoles>
   #include <abstractions/nameservice>
-  #include <abstractions/openssl>
-  #include <abstractions/ssl_certs>
+
 
   # Network access (use socket types)
   network inet stream,
@@ -50,7 +47,7 @@ profile n8n_app_profile flags=(attach_disconnected,mediate_deleted) {
   deny mount,
   deny umount,
   deny ptrace,
-  deny signal,
+  
 
   # Capabilities
   deny capability sys_admin,

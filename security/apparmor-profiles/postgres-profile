@@ -2,10 +2,7 @@
 
 profile n8n_postgres_profile flags=(attach_disconnected,mediate_deleted) {
   #include <abstractions/base>
-  #include <abstractions/bash>
-  #include <abstractions/consoles>
   #include <abstractions/nameservice>
-  
 
   # Network access (use socket types)
   network inet stream,
@@ -67,8 +64,7 @@ profile n8n_postgres_profile flags=(attach_disconnected,mediate_deleted) {
   # Secrets access
   /run/secrets/** r,
 
-  # Signal handling and process control
-  signal (send,receive) set=(term,int,quit,hup,usr1,usr2),
+  
 
   # Deny dangerous operations
   deny @{PROC}/sys/kernel/** w,
