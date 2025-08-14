@@ -5,7 +5,7 @@ profile n8n_postgres_profile flags=(attach_disconnected,mediate_deleted) {
   #include <abstractions/bash>
   #include <abstractions/consoles>
   #include <abstractions/nameservice>
-  #include <abstractions/shells>
+  
 
   # Network access (use socket types)
   network inet stream,
