@@ -38,8 +38,8 @@ profile n8n_app_profile flags=(attach_disconnected,mediate_deleted) {
   /usr/local/lib/node_modules/** r,
 
   # Docker entrypoint and init scripts
-  /docker-entrypoint.sh rix,
-  /usr/local/bin/docker-entrypoint.sh rix,
+  /docker-entrypoint.sh ix,
+  /usr/local/bin/docker-entrypoint.sh ix,
   /docker-entrypoint.d/** r,
 
   # Deny dangerous operations
