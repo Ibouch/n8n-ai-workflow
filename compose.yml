@@ -2,16 +2,16 @@
 # N8N PRODUCTION INFRASTRUCTURE - BASE CONFIGURATION
 # ==============================================================================
 # This file provides the foundational N8N infrastructure setup with core services.
-# 
+#
 # USAGE OPTIONS:
 # 1. Development: docker compose up -d
 # 2. Production: docker compose -f compose.yml -f compose.prod.yml up -d
-# 
+#
 # PRODUCTION NOTES:
 # - Use with compose.prod.yml for full monitoring stack and production optimizations
 # - Production file extends this base configuration with additional services
 # - Environment variables can be customized via .env file
-# 
+#
 # ==============================================================================
 # YAML ANCHORS - Reusable configuration templates
 # ==============================================================================
@@ -64,17 +64,14 @@ services:
   # ==============================================================================
   # DATABASE LAYER
   # ==============================================================================
-  
+
   # PostgreSQL - Primary database for N8N workflows and user data
   postgres:
-    <<: *hardening
     image: postgres:latest
     container_name: n8n-postgres
     restart: unless-stopped
-    # PostgreSQL runs as root initially, then drops to postgres user (uid 999)
     security_opt:
       - no-new-privileges:true
-      - seccomp:./security/seccomp-profile.json
     cap_drop:
       - ALL
     cap_add:
@@ -83,10 +80,12 @@ services:
       - FOWNER
       - SETGID
       - SETUID
+      - NET_BIND_SERVICE
+      - SYS_CHROOT
+      - FSETID
     tmpfs:
-      - /tmp:nosuid,size=100m
-      - /var/run/postgresql:nosuid,size=100m
-      - /var/lib/postgresql/tmp:nosuid,size=100m
+      - /tmp:size=100m
+      - /var/run/postgresql:size=100m
       - /dev/shm:size=512m
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-n8n_admin}
@@ -96,7 +95,7 @@ services:
     secrets:
       - source: postgres_password
         target: /run/secrets/postgres_password
-        mode: 0444
+        mode: 0400
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts/postgres-init:/docker-entrypoint-initdb.d:ro
@@ -115,7 +114,7 @@ services:
   # ==============================================================================
   # APPLICATION LAYER
   # ==============================================================================
-  
+
   # N8N - Workflow automation platform and primary application
   n8n:
     <<: *hardening
@@ -125,7 +124,10 @@ services:
     user: "1000:1000"  # n8n user
     security_opt:
       - no-new-privileges:true
-      - seccomp:./security/seccomp-profile.json
+    cap_drop:
+      - ALL
+    cap_add:
+      - DAC_OVERRIDE
     tmpfs:
       - /tmp:noexec,nosuid,size=100m
       - /home/node/.n8n/logs:noexec,nosuid,size=100m
@@ -143,7 +145,7 @@ services:
       - DB_POSTGRESDB_PASSWORD_FILE=/run/secrets/postgres_password
       - DB_POSTGRESDB_SSL_ENABLED=false
       - DB_POSTGRESDB_POOL_SIZE=${DB_POOL_SIZE:-10}
-      
+
       - N8N_BASIC_AUTH_ACTIVE=${N8N_BASIC_AUTH_ACTIVE:-true}
       - N8N_BASIC_AUTH_USER=${N8N_ADMIN_USER:-admin}
       - N8N_BASIC_AUTH_PASSWORD_FILE=/run/secrets/n8n_password
@@ -153,11 +155,11 @@ services:
       - WEBHOOK_URL=${WEBHOOK_URL:-https://localhost/}
       - N8N_EDITOR_BASE_URL=${N8N_EDITOR_BASE_URL:-https://localhost/}
       - N8N_ENCRYPTION_KEY_FILE=/run/secrets/n8n_encryption_key
-      
+
       - N8N_SECURE_COOKIE=${N8N_SECURE_COOKIE:-true}
       - N8N_LOG_LEVEL=${N8N_LOG_LEVEL:-info}
       - N8N_HIRING_BANNER_ENABLED=false
-      
+
       - N8N_METRICS=${N8N_METRICS:-true}
       - EXECUTIONS_PROCESS=${EXECUTIONS_PROCESS:-main}
       - EXECUTIONS_MODE=${EXECUTIONS_MODE:-queue}
@@ -165,17 +167,17 @@ services:
       - EXECUTIONS_TIMEOUT_MAX=${EXECUTIONS_TIMEOUT_MAX:-7200}
       - EXECUTIONS_DATA_SAVE_ON_ERROR=${EXECUTIONS_DATA_SAVE_ON_ERROR:-all}
       - EXECUTIONS_DATA_SAVE_ON_SUCCESS=${EXECUTIONS_DATA_SAVE_ON_SUCCESS:-all}
-      
+
       - QUEUE_BULL_REDIS_HOST=redis
       - QUEUE_BULL_REDIS_PORT=6379
       - QUEUE_BULL_REDIS_PASSWORD_FILE=/run/secrets/redis_password
       - QUEUE_BULL_REDIS_DB=0
       - QUEUE_RECOVERY_INTERVAL=60
-      
+
       - N8N_VERSION_NOTIFICATIONS_ENABLED=${N8N_VERSION_NOTIFICATIONS_ENABLED:-false}
       - N8N_DIAGNOSTICS_ENABLED=${N8N_DIAGNOSTICS_ENABLED:-false}
       - N8N_PERSONALIZATION_ENABLED=${N8N_PERSONALIZATION_ENABLED:-false}
-      
+
       - N8N_EMAIL_MODE=smtp
       - N8N_SMTP_HOST=${SMTP_HOST:-localhost}
       - N8N_SMTP_PORT=${SMTP_PORT:-587}
@@ -185,7 +187,7 @@ services:
       - N8N_SMTP_SSL=${SMTP_SSL:-false}
       - N8N_SMTP_OAUTH_SERVICE_CLIENT=${SMTP_OAUTH_SERVICE_CLIENT:-}
       - N8N_SMTP_OAUTH_PRIVATE_KEY=${SMTP_OAUTH_PRIVATE_KEY:-}
-      
+
       - GENERIC_TIMEZONE=${GENERIC_TIMEZONE:-UTC}
       - TZ=${GENERIC_TIMEZONE:-UTC}
     secrets:
@@ -233,23 +235,23 @@ services:
   # ==============================================================================
   # REVERSE PROXY & TLS TERMINATION
   # ==============================================================================
-  
+
   # Nginx - Reverse proxy with TLS termination and security headers
   nginx:
-    <<: *hardening
     image: nginx:latest
     container_name: n8n-nginx
     restart: unless-stopped
-    # Nginx runs as root initially to bind privileged ports, then drops to nginx user
     security_opt:
       - no-new-privileges:true
-      - seccomp:./security/seccomp-profile.json
+    cap_drop:
+      - ALL
     cap_add:
       - CHOWN
       - DAC_OVERRIDE
       - SETGID
       - SETUID
       - NET_BIND_SERVICE
+      - KILL
     tmpfs:
       - /tmp:noexec,nosuid,size=100m
       - /var/run:noexec,nosuid,size=100m
@@ -280,17 +282,14 @@ services:
   # ==============================================================================
   # CACHE & SESSION STORAGE
   # ==============================================================================
-  
+
   # Redis - In-memory cache and N8N queue backend
   redis:
-    <<: *hardening
     image: redis:latest
     container_name: n8n-redis
     restart: unless-stopped
-    user: "999:999"  # redis user
     security_opt:
       - no-new-privileges:true
-      - seccomp:./security/seccomp-profile.json
     cap_drop:
       - ALL
     cap_add:
@@ -298,20 +297,18 @@ services:
       - DAC_OVERRIDE
       - SETGID
       - SETUID
+      - SYS_RESOURCE
     tmpfs:
-      - /tmp:nosuid,size=100m
+      - /tmp:size=100m
     command: >
       sh -c '
       REDIS_PASS="$$(cat /run/secrets/redis_password | tr -d "\n")"
       && if [ -z "$$REDIS_PASS" ]; then echo "Error: Redis password is empty" >&2; exit 1; fi
-      && printf "requirepass \"%s\"\nmaxmemory 512mb\nmaxmemory-policy allkeys-lru\nsave 60 1000\nappendonly yes\ntcp-keepalive 300\ntimeout 0\ndir /data\n" "$$REDIS_PASS" > /tmp/redis.conf
-      && exec redis-server /tmp/redis.conf'
+      && exec redis-server --requirepass "$$REDIS_PASS" --maxmemory 512mb --maxmemory-policy allkeys-lru --save 60 1000 --appendonly yes --tcp-keepalive 300 --timeout 0 --dir /data --protected-mode yes --bind 0.0.0.0'
     secrets:
       - source: redis_password
         target: /run/secrets/redis_password
-        uid: "999"
-        gid: "999"
-        mode: 0440
+        mode: 0400
     volumes:
       - redis_data:/data
     networks:
@@ -340,7 +337,7 @@ networks:
       config:
         - subnet: 172.20.0.0/24
           gateway: 172.20.0.1
-  
+
   n8n-backend:
     driver: bridge
     internal: true

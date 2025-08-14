@@ -2,12 +2,12 @@
 # PRODUCTION ENVIRONMENT OVERRIDES
 # ==============================================================================
 # This file provides production-specific configurations and full observability stack.
-# 
+#
 # USAGE REQUIREMENTS:
 # - This file MUST be used with the base compose.yml file
 # - Command: docker compose -f compose.yml -f compose.prod.yml up -d
 # - Order matters: base file first, then production overrides
-# 
+#
 # MAINTENANCE NOTES:
 # - Shared anchors must be kept identical to compose.yml
 # - Complete monitoring stack with production-grade resource limits
@@ -48,7 +48,7 @@ services:
   # ==============================================================================
   # PRODUCTION DATABASE OPTIMIZATIONS
   # ==============================================================================
-  
+
   postgres:
     command: >
       postgres
@@ -86,23 +86,23 @@ services:
   # ==============================================================================
   # PRODUCTION APPLICATION OPTIMIZATIONS
   # ==============================================================================
-  
+
   n8n:
     environment:
       NODE_ENV: "production"
       NODE_OPTIONS: "--max-old-space-size=2048 --max-semi-space-size=64"
-      
+
       EXECUTIONS_DATA_PRUNE: "true"
       EXECUTIONS_DATA_MAX_AGE: "168"
       EXECUTIONS_DATA_PRUNE_TIMEOUT: "3600"
       EXECUTIONS_DATA_PRUNE_HARD_DELETE_INTERVAL: "15"
-      
+
       N8N_DISABLE_PRODUCTION_MAIN_PROCESS: "false"
       N8N_SKIP_WEBHOOK_DEREGISTRATION_SHUTDOWN: "false"
       N8N_BLOCK_FILE_ACCESS_TO_N8N_FILES: "true"
       N8N_DEFAULT_BINARY_DATA_MODE: "filesystem"
       N8N_BINARY_DATA_TTL: "2880"
-      
+
       N8N_METRICS_PREFIX: "n8n_"
       N8N_QUEUE_HEALTH_CHECK_ACTIVE: "true"
     deploy:
@@ -128,7 +128,7 @@ services:
   # ==============================================================================
   # PRODUCTION REVERSE PROXY OPTIMIZATIONS
   # ==============================================================================
-  
+
   nginx:
     sysctls:
       - net.core.somaxconn=65535
@@ -158,20 +158,21 @@ services:
   # ==============================================================================
   # MONITORING & OBSERVABILITY STACK
   # ==============================================================================
-  
+
   prometheus:
     image: prom/prometheus:latest
     container_name: n8n-prometheus
     restart: unless-stopped
+    # Run as nobody user (65534)
     user: "65534:65534"
     security_opt:
       - no-new-privileges:true
-      - seccomp:./security/seccomp-profile.json
     cap_drop:
       - ALL
+    cap_add:
+      - DAC_OVERRIDE
     tmpfs:
       - /tmp:noexec,nosuid,size=100m
-      - /prometheus/.tmp:noexec,nosuid,size=100m
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
@@ -201,15 +202,16 @@ services:
     image: grafana/grafana:latest
     container_name: n8n-grafana
     restart: unless-stopped
+    # Run as grafana user (472)
     user: "472:472"
     security_opt:
       - no-new-privileges:true
-      - seccomp:./security/seccomp-profile.json
     cap_drop:
       - ALL
+    cap_add:
+      - DAC_OVERRIDE
     tmpfs:
       - /tmp:noexec,nosuid,size=100m
-      - /var/lib/grafana/plugins:noexec,nosuid,size=200m
     environment:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
       - GF_SECURITY_ADMIN_PASSWORD_FILE=/run/secrets/grafana_password
@@ -225,7 +227,7 @@ services:
         target: /run/secrets/grafana_password
         uid: "472"
         gid: "472"
-        mode: 0440
+        mode: 0400
     volumes:
       - grafana_data:/var/lib/grafana
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
@@ -247,16 +249,16 @@ services:
     image: grafana/loki:latest
     container_name: n8n-loki
     restart: unless-stopped
+    # Run as loki user (10001)
     user: "10001:10001"
     security_opt:
       - no-new-privileges:true
-      - seccomp:./security/seccomp-profile.json
     cap_drop:
       - ALL
+    cap_add:
+      - DAC_OVERRIDE
     tmpfs:
       - /tmp:noexec,nosuid,size=100m
-      - /loki/wal:noexec,nosuid,size=200m
-      - /loki/chunks:noexec,nosuid,size=500m
     command: -config.file=/etc/loki/local-config.yaml
     volumes:
       - ./monitoring/loki/loki-config.yaml:/etc/loki/local-config.yaml:ro
@@ -276,16 +278,17 @@ services:
     image: grafana/promtail:latest
     container_name: n8n-promtail
     restart: unless-stopped
+    # Promtail needs root to read Docker logs
     user: "0:0"
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
     cap_add:
-      - DAC_OVERRIDE
+      - DAC_READ_SEARCH  # Better than DAC_OVERRIDE for read-only access
+      - SYS_ADMIN
     tmpfs:
       - /tmp:noexec,nosuid,size=100m
-      - /tmp/positions:noexec,nosuid,size=10m
     volumes:
       - /var/log:/var/log:ro
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
@@ -307,15 +310,16 @@ services:
     image: prom/alertmanager:latest
     container_name: n8n-alertmanager
     restart: unless-stopped
+    # Run as nobody user (65534)
     user: "65534:65534"
     security_opt:
       - no-new-privileges:true
-      - seccomp:./security/seccomp-profile.json
     cap_drop:
       - ALL
+    cap_add:
+      - DAC_OVERRIDE
     tmpfs:
       - /tmp:noexec,nosuid,size=100m
-      - /alertmanager/.tmp:noexec,nosuid,size=50m
     environment:
       - SMTP_HOST=${SMTP_HOST:-localhost}
       - SMTP_PORT=${SMTP_PORT:-587}
@@ -334,7 +338,7 @@ services:
         target: /run/secrets/smtp_password
         uid: "65534"
         gid: "65534"
-        mode: 0440
+        mode: 0400
     volumes:
       - ./monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
       - alertmanager_data:/alertmanager
@@ -353,10 +357,10 @@ services:
     image: prometheuscommunity/postgres-exporter:latest
     container_name: n8n-postgres-exporter
     restart: unless-stopped
+    # Run as nobody user (65534)
     user: "65534:65534"
     security_opt:
       - no-new-privileges:true
-      - seccomp:./security/seccomp-profile.json
     cap_drop:
       - ALL
     tmpfs:
@@ -371,7 +375,7 @@ services:
         target: /run/secrets/postgres_password
         uid: "65534"
         gid: "65534"
-        mode: 0440
+        mode: 0400
     volumes:
       - ./monitoring/postgres-exporter:/etc/postgres_exporter:ro
     networks:
@@ -392,10 +396,10 @@ services:
     image: oliver006/redis_exporter:latest
     container_name: n8n-redis-exporter
     restart: unless-stopped
+    # Run as redis_exporter user (59000)
     user: "59000:59000"
     security_opt:
       - no-new-privileges:true
-      - seccomp:./security/seccomp-profile.json
     cap_drop:
       - ALL
     tmpfs:
@@ -409,7 +413,7 @@ services:
         target: /run/secrets/redis_password
         uid: "59000"
         gid: "59000"
-        mode: 0440
+        mode: 0400
     networks:
       - n8n-backend
     depends_on:
@@ -428,12 +432,15 @@ services:
     image: prom/node-exporter:latest
     container_name: n8n-node-exporter
     restart: unless-stopped
+    # Run as nobody user (65534)
     user: "65534:65534"
     security_opt:
       - no-new-privileges:true
-      - seccomp:./security/seccomp-profile.json
     cap_drop:
       - ALL
+    cap_add:
+      - SYS_TIME
+      - DAC_READ_SEARCH
     tmpfs:
       - /tmp:noexec,nosuid,size=100m
     command:
@@ -468,9 +475,9 @@ services:
       - ALL
     cap_add:
       - SYS_ADMIN
+      - DAC_READ_SEARCH
     tmpfs:
       - /tmp:noexec,nosuid,size=100m
-      - /var/lib/cadvisor:noexec,nosuid,size=100m
     command:
       - '--housekeeping_interval=30s'
       - '--docker_only=true'
